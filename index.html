@@ -10,6 +10,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
     <script src='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js'></script>
     <script src='https://unpkg.com/@maplibre/maplibre-gl-leaflet@latest/leaflet-maplibre-gl.js'></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
@@ -120,10 +121,118 @@
             width: 100%;
         }
         .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(59,130,246,0.3); }
+        .btn:disabled { 
+            opacity: 0.6; 
+            cursor: not-allowed; 
+            transform: none !important; 
+        }
         .btn-success { background: linear-gradient(135deg, #10b981 0%, #047857 100%); }
         .btn-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
         .btn-secondary { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); }
         .btn svg { width: 16px; height: 16px; }
+
+        /* SimConnect Status Styles */
+        .simconnect-section {
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 16px;
+        }
+
+        .status-connected {
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #10b981;
+        }
+
+        .status-disconnected {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: #ef4444;
+        }
+
+        .status-connecting {
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #f59e0b;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .connection-controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .auto-update-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 44px;
+            height: 24px;
+            background: rgba(107, 114, 128, 0.3);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .toggle-switch.active {
+            background: rgba(16, 185, 129, 0.3);
+        }
+
+        .toggle-switch::before {
+            content: '';
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 20px;
+            height: 20px;
+            background: #ffffff;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .toggle-switch.active::before {
+            transform: translateX(20px);
+            background: #10b981;
+        }
+
+        .realtime-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #10b981;
+            margin-top: 8px;
+        }
 
         .aircraft-info {
             position: absolute;
@@ -238,7 +347,48 @@
     <div id="map"></div>
 
     <div class="sidebar">
-        <!-- Aircraft Position -->
+        <!-- NEW: SimConnect Status Section -->
+        <div class="sidebar-section simconnect-section">
+            <div class="section-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                </svg>
+                SimConnect Status
+            </div>
+            
+            <div id="simconnect-status" class="status-indicator status-disconnected">
+                <div class="status-dot"></div>
+                <span>Disconnected</span>
+            </div>
+            
+            <div class="connection-controls">
+                <button id="connect-btn" class="btn btn-success" onclick="connectSimConnect()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
+                    </svg>
+                    Connect
+                </button>
+                <button id="disconnect-btn" class="btn btn-danger" onclick="disconnectSimConnect()" disabled>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                    Disconnect
+                </button>
+            </div>
+            
+            <div class="auto-update-toggle">
+                <div id="auto-update-toggle" class="toggle-switch active" onclick="toggleAutoUpdate()"></div>
+                <span>Real-time Updates</span>
+            </div>
+            
+            <div id="realtime-indicator" class="realtime-indicator" style="display: none;">
+                <div class="status-dot"></div>
+                <span>Live data streaming</span>
+            </div>
+        </div>
+
+        <!-- EXISTING: Aircraft Position -->
         <div class="sidebar-section">
             <div class="section-title">
                 <svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 821.77 816.06" style="width: 18px; height: 18px;">
@@ -278,7 +428,7 @@
             </button>
         </div>
 
-        <!-- SimBrief Integration -->
+        <!-- EXISTING: SimBrief Integration -->
         <div class="sidebar-section">
             <div class="section-title">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px;">
@@ -314,6 +464,7 @@
             <input type="file" id="simbriefFile" accept=".json,.fms" onchange="handleFileImport()" style="display: none;" />
         </div>
 
+        <!-- EXISTING: Controls Section -->
         <div class="sidebar-section">
             <button class="btn btn-secondary" onclick="centerOnAircraft()" style="margin-bottom: 12px;">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -331,6 +482,7 @@
         </div>
     </div>
 
+    <!-- EXISTING: Aircraft Info Panel -->
     <div class="aircraft-info" id="aircraftInfo" style="display: none;">
         <div class="aircraft-info-header">
             <h3 class="aircraft-info-title">
@@ -362,6 +514,7 @@
         </div>
     </div>
 
+    <!-- EXISTING: Status Bar -->
     <div class="status-bar">
         <span id="status">System initialized - Ready for flight tracking</span>
         <span id="status-indicator" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
@@ -371,11 +524,115 @@
     </div>
 
     <script>
+        // EXISTING VARIABLES (keeping all your original variables)
         let map, aircraftMarker, flightPlanRoute, currentFlightPlan = null, currentBaseLayer, currentOverlayLayer;
         let aircraftData = { callsign: '', aircraft: '', latitude: null, longitude: null, altitude: null, heading: null, groundSpeed: null, origin: '', destination: '' };
         let airportMarkers = L.layerGroup();
         let airports = []; // Store airports data globally
 
+        // NEW VARIABLES for SimConnect
+        let socket = null;
+        let autoUpdateEnabled = true;
+        let isSimConnectConnected = false;
+
+        // NEW: Initialize WebSocket connection
+        function initWebSocket() {
+            if (typeof io !== 'undefined') {
+                socket = io();
+                
+                socket.on('connect', function() {
+                    console.log('Connected to server');
+                    updateStatus('Connected to server', 'success');
+                });
+                
+                socket.on('disconnect', function() {
+                    console.log('Disconnected from server');
+                    updateStatus('Disconnected from server', 'warning');
+                });
+                
+                socket.on('simconnect_status', function(data) {
+                    updateSimConnectStatus(data);
+                });
+                
+                socket.on('aircraft_position_update', function(data) {
+                    if (autoUpdateEnabled && data) {
+                        handleRealtimePositionUpdate(data);
+                    }
+                });
+            }
+        }
+
+        // NEW: SimConnect Functions
+        async function connectSimConnect() {
+            const connectBtn = document.getElementById('connect-btn');
+            const disconnectBtn = document.getElementById('disconnect-btn');
+            
+            connectBtn.disabled = true;
+            connectBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>Connecting...';
+            
+            try {
+                const response = await fetch('/api/simconnect/connect', { method: 'POST' });
+                const result = await response.json();
+                
+                if (result.success) {
+                    isSimConnectConnected = false;
+                document.getElementById('realtime-indicator').style.display = 'none';
+            }
+        }
+
+        function toggleAutoUpdate() {
+            const toggle = document.getElementById('auto-update-toggle');
+            const indicator = document.getElementById('realtime-indicator');
+            
+            autoUpdateEnabled = !autoUpdateEnabled;
+            
+            if (autoUpdateEnabled) {
+                toggle.classList.add('active');
+                if (isSimConnectConnected) {
+                    indicator.style.display = 'flex';
+                }
+            } else {
+                toggle.classList.remove('active');
+                indicator.style.display = 'none';
+            }
+        }
+
+        function handleRealtimePositionUpdate(positionData) {
+            if (!autoUpdateEnabled) return;
+            
+            // Update form fields
+            document.getElementById('latitude').value = positionData.latitude.toFixed(6);
+            document.getElementById('longitude').value = positionData.longitude.toFixed(6);
+            document.getElementById('altitude').value = Math.round(positionData.altitude);
+            document.getElementById('heading').value = Math.round(positionData.heading);
+            
+            // Update aircraft data
+            aircraftData.latitude = positionData.latitude;
+            aircraftData.longitude = positionData.longitude;
+            aircraftData.altitude = positionData.altitude;
+            aircraftData.heading = positionData.heading;
+            aircraftData.groundSpeed = positionData.ground_speed;
+            aircraftData.aircraft = positionData.aircraft_title;
+            aircraftData.callsign = positionData.atc_id;
+            
+            // Update aircraft marker
+            if (aircraftMarker) map.removeLayer(aircraftMarker);
+            const aircraftIcon = L.divIcon({
+                html: `<div style="font-size: 32px; transform: rotate(${positionData.heading - 90}deg); color: #3b82f6;">✈</div>`,
+                className: 'aircraft-marker',
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
+            aircraftMarker = L.marker([positionData.latitude, positionData.longitude], { icon: aircraftIcon }).addTo(map);
+            
+            // Show and update aircraft info panel
+            showAircraftInfo();
+            
+            // Update status
+            updateStatus(`Live position: ${positionData.latitude.toFixed(4)}, ${positionData.longitude.toFixed(4)}, ${Math.round(positionData.altitude)}ft`, 'success');
+        }
+
+        // EXISTING FUNCTIONS (keeping all your original functions)
         function updateStatus(message, type = 'success') {
             document.getElementById('status').textContent = message;
             const dot = document.getElementById('status-dot');
@@ -480,7 +737,7 @@
             document.getElementById('hdg').textContent = `${aircraftData.heading || '-'}°`;
             document.getElementById('callsign').textContent = aircraftData.callsign || '-';
             document.getElementById('aircraft').textContent = aircraftData.aircraft || '-';
-            document.getElementById('gs').textContent = aircraftData.groundSpeed || '-';
+            document.getElementById('gs').textContent = aircraftData.groundSpeed ? `${Math.round(aircraftData.groundSpeed)} kts` : '-';
             document.getElementById('origin').textContent = aircraftData.origin || '-';
             document.getElementById('destination').textContent = aircraftData.destination || '-';
         }
@@ -588,6 +845,7 @@
         function centerOnAircraft() {
             if (aircraftData.latitude && aircraftData.longitude) {
                 map.setView([aircraftData.latitude, aircraftData.longitude], 8);
+                updateStatus('Centered on aircraft position', 'success');
             } else {
                 updateStatus('Aircraft position not set', 'warning');
             }
@@ -600,7 +858,106 @@
             updateStatus('Flight plan cleared', 'success');
         }
 
-        initMap();
+        // Enhanced legacy compatibility
+        async function fetchAircraftData() {
+            if (!isSimConnectConnected) return;
+            
+            try {
+                const positionResponse = await fetch('/aircraft/position');
+                const positionData = await positionResponse.json();
+                if (positionData.error) {
+                    console.error('Position Error:', positionData.error);
+                } else {
+                    console.log('Position:', positionData);
+                    if (autoUpdateEnabled) {
+                        handleRealtimePositionUpdate(positionData);
+                    }
+                }
+
+                const typeResponse = await fetch('/aircraft/type');
+                const typeData = await typeResponse.json();
+                if (typeData.error) {
+                    console.error('Type Error:', typeData.error);
+                } else {
+                    console.log('Aircraft Type:', typeData.type);
+                    aircraftData.aircraft = typeData.type;
+                }
+            } catch (error) {
+                console.error('Fetch Error:', error);
+            }
+        }
+
+        // Initialize everything
+        async function initialize() {
+            await initMap();
+            initWebSocket();
+            
+            // Legacy support - keep the existing polling as fallback
+            setInterval(fetchAircraftData, 2000);
+            
+            updateStatus('FlyCharts with SimConnect integration ready', 'success');
+        }
+
+        // Start the application
+        initialize();
     </script>
 </body>
-</html>
+</html>ectConnected = true;
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    updateStatus('Connected to SimConnect', 'success');
+                    
+                    if (autoUpdateEnabled) {
+                        document.getElementById('realtime-indicator').style.display = 'flex';
+                    }
+                } else {
+                    updateStatus(`Failed to connect: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                updateStatus(`Connection error: ${error.message}`, 'error');
+            }
+            
+            connectBtn.disabled = false;
+            connectBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>Connect';
+        }
+
+        async function disconnectSimConnect() {
+            const connectBtn = document.getElementById('connect-btn');
+            const disconnectBtn = document.getElementById('disconnect-btn');
+            
+            try {
+                const response = await fetch('/api/simconnect/disconnect', { method: 'POST' });
+                const result = await response.json();
+                
+                isSimConnectConnected = false;
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                document.getElementById('realtime-indicator').style.display = 'none';
+                
+                updateStatus('Disconnected from SimConnect', 'success');
+            } catch (error) {
+                updateStatus(`Disconnect error: ${error.message}`, 'error');
+            }
+        }
+
+        function updateSimConnectStatus(statusData) {
+            const statusElement = document.getElementById('simconnect-status');
+            const connectBtn = document.getElementById('connect-btn');
+            const disconnectBtn = document.getElementById('disconnect-btn');
+            
+            if (statusData.connected) {
+                statusElement.className = 'status-indicator status-connected';
+                statusElement.innerHTML = '<div class="status-dot"></div><span>Connected</span>';
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                isSimConnectConnected = true;
+                
+                if (autoUpdateEnabled) {
+                    document.getElementById('realtime-indicator').style.display = 'flex';
+                }
+            } else {
+                statusElement.className = 'status-indicator status-disconnected';
+                statusElement.innerHTML = '<div class="status-dot"></div><span>Disconnected</span>';
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+                isSimConn

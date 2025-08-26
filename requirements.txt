@@ -1,0 +1,25 @@
+# FlyCharts SimConnect Integration Requirements
+# Install with: pip install -r requirements.txt
+
+# Core Flask dependencies
+Flask==2.3.3
+flask-socketio==5.3.6
+flask-cors==4.0.0
+
+# WebSocket support
+python-socketio==5.8.0
+eventlet==0.33.3
+
+# SimConnect library for MSFS integration
+# Note: This requires Microsoft Flight Simulator to be running
+SimConnect==0.4.25
+
+# Additional utilities
+python-dotenv==1.0.0
+gunicorn==21.2.0
+
+# Development dependencies (optional)
+# Uncomment for development
+# pytest==7.4.2
+# black==23.7.0
+# flake8==6.0.0
