@@ -1,11 +1,11 @@
-from flask import Flask, jsonify, send_file, send_from_directory
+from flask import Flask, jsonify, send_file, send_from_directory, Response
 from flask_cors import CORS
 from SimConnect import SimConnect, AircraftRequests
 import logging
 import os
 
 # Initialize Flask app
-app = Flask(__name__, static_folder='scripts')  # Set scripts folder for static files
+app = Flask(__name__, static_folder='.')  # Serve all files from root
 CORS(app)  # Enable CORS for frontend access
 
 # Set up logging
@@ -31,6 +31,8 @@ def get_aircraft_position():
         latitude = aq.get("PLANE_LATITUDE")  # Degrees
         longitude = aq.get("PLANE_LONGITUDE")  # Degrees
         altitude = aq.get("PLANE_ALTITUDE")  # Feet
+        heading = aq.get("PLANE_HEADING_DEGREES_TRUE")  # Degrees
+        airspeed = aq.get("AIRSPEED_TRUE")  # Knots
         
         if latitude is None or longitude is None or altitude is None:
             return jsonify({"error": "Failed to retrieve position data"}), 500
@@ -38,7 +40,9 @@ def get_aircraft_position():
         return jsonify({
             "latitude": float(latitude),
             "longitude": float(longitude),
-            "altitude": float(altitude)
+            "altitude": float(altitude),
+            "heading": float(heading or 0),
+            "airspeed": float(airspeed or 0)
         })
     except Exception as e:
         logger.error(f"Error retrieving position: {str(e)}")
@@ -61,19 +65,24 @@ def get_aircraft_type():
 
 @app.route('/health', methods=['GET'])
 def health_check():
-    return jsonify({"status": "Backend running", "simconnect_connected": sm is not None})
+    return jsonify({
+        "status": "Backend running",
+        "simconnect_connected": sm is not None and aq is not None
+    })
 
 @app.route('/')
 def serve_index():
-    # Serve index.html from root directory
     return send_file('index.html')
 
-@app.route('/scripts/<path:path>')
+@app.route('/favicon.ico')
+def serve_favicon_ico():
+    return Response(status=204)  # Suppress favicon.ico requests
+
+@app.route('/<path:path>')
 def serve_static(path):
-    # Serve static files (e.g., frontend.js) from scripts folder
-    if os.path.exists(os.path.join(app.static_folder, path)):
-        return send_from_directory(app.static_folder, path)
+    if os.path.exists(path):
+        return send_from_directory('.', path)
     return jsonify({"error": "File not found"}), 404
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5500, debug=True)
