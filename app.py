@@ -1,10 +1,11 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from SimConnect import SimConnect, AircraftRequests
 import logging
+import os
 
 # Initialize Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_folder='scripts')  # Set scripts folder for static files
 CORS(app)  # Enable CORS for frontend access
 
 # Set up logging
@@ -27,7 +28,6 @@ def get_aircraft_position():
         return jsonify({"error": "SimConnect not initialized"}), 500
     
     try:
-        # Retrieve aircraft position
         latitude = aq.get("PLANE_LATITUDE")  # Degrees
         longitude = aq.get("PLANE_LONGITUDE")  # Degrees
         altitude = aq.get("PLANE_ALTITUDE")  # Feet
@@ -50,7 +50,6 @@ def get_aircraft_type():
         return jsonify({"error": "SimConnect not initialized"}), 500
     
     try:
-        # Retrieve aircraft type
         atc_type = aq.get("ATC_TYPE")  # String
         if atc_type is None:
             return jsonify({"error": "Failed to retrieve aircraft type"}), 500
@@ -63,6 +62,18 @@ def get_aircraft_type():
 @app.route('/health', methods=['GET'])
 def health_check():
     return jsonify({"status": "Backend running", "simconnect_connected": sm is not None})
+
+@app.route('/')
+def serve_index():
+    # Serve index.html from root directory
+    return send_file('index.html')
+
+@app.route('/scripts/<path:path>')
+def serve_static(path):
+    # Serve static files (e.g., frontend.js) from scripts folder
+    if os.path.exists(os.path.join(app.static_folder, path)):
+        return send_from_directory(app.static_folder, path)
+    return jsonify({"error": "File not found"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
