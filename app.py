@@ -136,7 +136,7 @@ class SimConnectManager:
             latitude = self.aq.get("PLANE_LATITUDE")
             longitude = self.aq.get("PLANE_LONGITUDE")
             altitude = self.aq.get("PLANE_ALTITUDE")
-            heading = self.aq.get("PLANE_HEADING_DEGREES_TRUE")
+            heading = self.aq.get("PLANE_HEADING_DEGREES_MAGNETIC")
             airspeed = self.aq.get("AIRSPEED_TRUE")
             ground_speed = self.aq.get("GROUND_VELOCITY")
             vertical_speed = self.aq.get("VERTICAL_SPEED")
@@ -186,7 +186,7 @@ class SimConnectManager:
                     # Emit to all connected clients
                     socketio.emit('aircraft_position_update', position)
                 
-                time.sleep(1)  # Update every second
+                time.sleep(0.5)  # Update every second
                 
             except Exception as e:
                 logger.error(f"Error in update loop: {e}")
