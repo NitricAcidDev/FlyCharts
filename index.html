@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fly Charts</title>
+    <link rel="icon" type="image/svg+xml" href="image/favicon.svg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <link href='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css' rel='stylesheet' />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script src='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js'></script>
+    <script src='https://unpkg.com/@maplibre/maplibre-gl-leaflet@latest/leaflet-maplibre-gl.js'></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #1e3c72;
+            color: #ffffff;
+        }
+
+        #map { width: 100vw; height: 100vh; position: relative; }
+
+        .header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: linear-gradient(135deg, #3b82f6 0%, #8d1dd8 100%);
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding: 5px 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-weight: 700;
+            font-size: 18px;
+            color: #ffffff;
+        }
+
+        .logo-icon {
+            width: 60px;
+            height: 60px;
+            filter: invert(100%) sepia(100%) saturate(500%) hue-rotate(180deg);
+            margin-right: 10px;
+        }
+
+        .logo-text {
+            font-size: 29px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 12px 16px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 14px;
+        }
+        .form-input:focus { outline: none; border-color: #3b82f6; }
+
+        .sidebar {
+            position: absolute;
+            top: 65px;
+            left: 0px;
+            bottom: 40px; /* Adjusted to prevent overlap with status bar */
+            width: 340px;
+            z-index: 999;
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            overflow-y: auto;
+        }
+
+        .sidebar-section { padding: 24px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 14px;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 16px;
+        }
+
+        .section-title svg { width: 18px; height: 18px; }
+
+        .form-group { margin-bottom: 16px; }
+        .form-label { display: block; font-weight: 500; font-size: 13px; color: #cbd5e1; margin-bottom: 6px; }
+        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+            border: none;
+            border-radius: 8px;
+            color: #ffffff;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+        .btn:hover { transform: translateY(-1px); box-shadow: 0 8px 25px rgba(59,130,246,0.3); }
+        .btn-success { background: linear-gradient(135deg, #10b981 0%, #047857 100%); }
+        .btn-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); }
+        .btn-secondary { background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%); }
+        .btn svg { width: 16px; height: 16px; }
+
+        .aircraft-info {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            z-index: 999;
+            background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.95) 100%);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px;
+            min-width: 300px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+        }
+        .aircraft-info-header { padding: 20px 24px 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .aircraft-info-title { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 16px; color: #ffffff; margin: 0; }
+        .aircraft-info-body { padding: 20px 24px; }
+        .info-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .info-label { font-weight: 500; font-size: 13px; color: #94a3b8; }
+        .info-value { font-weight: 600; font-size: 14px; color: #ffffff; }
+
+        .status-bar {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.95) 100%);
+            backdrop-filter: blur(20px);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding: 12px 24px;
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            color: #94a3b8;
+        }
+
+        .file-upload-area {
+            border: 2px dashed rgba(59, 130, 246, 0.3);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 16px;
+            background: rgba(15, 23, 42, 0.5);
+        }
+
+        .file-upload-area:hover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+
+        .file-upload-area.dragover {
+            border-color: #10b981;
+            background: rgba(16, 185, 129, 0.1);
+        }
+
+        .file-upload-text {
+            color: #94a3b8;
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .file-upload-formats {
+            color: #64748b;
+            font-size: 12px;
+        }
+
+        .simbrief-format-info {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 12px;
+            color: #93c5fd;
+        }
+
+        .simbrief-format-info strong {
+            color: #3b82f6;
+        }
+
+        .dark-satellite {
+            filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+        }
+
+        .leaflet-bottom .leaflet-control {
+            margin-bottom: 60px !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            <img src="image/airplaneoutline.svg" class="logo-icon" alt="Airplane">
+            <span class="logo-text">Fly Charts</span>
+        </div>
+        <div>
+            <select id="mapLayer" class="form-input" style="width: 180px;" onchange="changeMapLayer()">
+                <option value="tomtom" selected>Dark Street Map</option>
+                <option value="osm">OpenStreetMap</option>
+                <option value="satellite">Satellite</option>
+                <option value="dark">Dark Theme</option>
+                <option value="hybrid">Hybrid</option>
+                <option value="darkHybrid">Dark Hybrid</option>
+                <option value="terrain">Terrain</option>
+                <option value="topo">Topographic</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <div class="sidebar">
+        <!-- Aircraft Position -->
+        <div class="sidebar-section">
+            <div class="section-title">
+                <svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 821.77 816.06" style="width: 18px; height: 18px;">
+                    <defs>
+                        <style>
+                            .cls-1 {
+                                fill: none;
+                                stroke: currentColor;
+                                stroke-linejoin: round;
+                                stroke-width: 40px;
+                            }
+                        </style>
+                    </defs>
+                    <path class="cls-1" d="M74,119.06l64-64,409.86,113.91,96.14-94.91c61.21-58.57,126.77-65.12,148.3-40.7,19.33,21.92,9.37,79.7-32.84,128.19-33.73,38.76-72.98,72.34-109.47,108.51l114,410-63,62-183-331.5-189.56,187.95-4.44,132.55-64,65-72-160-168-77,62-61,138.47-5.56,189.91-193.44L74,119.06Z"/>
+                </svg>
+                Aircraft Position
+            </div>
+            <div class="form-group">
+                <label class="form-label">Coordinates</label>
+                <div class="input-grid">
+                    <input type="number" id="latitude" class="form-input" placeholder="Latitude" step="any" />
+                    <input type="number" id="longitude" class="form-input" placeholder="Longitude" step="any" />
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Flight Parameters</label>
+                <div class="input-grid">
+                    <input type="number" id="altitude" class="form-input" placeholder="Altitude (ft)" />
+                    <input type="number" id="heading" class="form-input" placeholder="Heading (°)" min="0" max="360" />
+                </div>
+            </div>
+            <button class="btn btn-success" onclick="updateAircraftPosition()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9,11 12,14 22,4"></polyline>
+                </svg>
+                Update Position
+            </button>
+        </div>
+
+        <!-- SimBrief Integration -->
+        <div class="sidebar-section">
+            <div class="section-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px;">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
+                </svg>
+                SimBrief Integration
+            </div>
+            <div class="simbrief-format-info">
+                <strong>Export Format:</strong> Use SimBrief's "OFP" (Operational Flight Plan) format in JSON or download the flight plan as PLN/FPL format for import.
+            </div>
+            <div class="form-group">
+                <label class="form-label">Flight ID</label>
+                <input type="text" id="simbriefId" class="form-input" placeholder="Enter SimBrief Flight ID" />
+            </div>
+            <button class="btn" onclick="importSimBrief()" style="margin-bottom: 16px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7,10 12,15 17,10"></polyline>
+                </svg>
+                Import Flight Plan
+            </button>
+            <div class="file-upload-area" onclick="document.getElementById('simbriefFile').click()" ondrop="handleFileDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
+                <div class="file-upload-text">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 24px; height: 24px; margin-bottom: 8px;">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                        <polyline points="17,8 12,3 7,8"></polyline>
+                        <line x1="12" y1="3" x2="12" y2="15"></line>
+                    </svg>
+                    Drop flight plan file here or click to browse
+                </div>
+                <div class="file-upload-formats">Supports: .json, .fms</div>
+            </div>
+            <input type="file" id="simbriefFile" accept=".json,.fms" onchange="handleFileImport()" style="display: none;" />
+        </div>
+
+        <div class="sidebar-section">
+            <button class="btn btn-secondary" onclick="centerOnAircraft()" style="margin-bottom: 12px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M12 1v6m0 6v6m11-7h-6m-6 0H1"></path>
+                </svg>
+                Center on Aircraft
+            </button>
+            <button class="btn btn-danger" onclick="clearFlightPlan()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3,6 5,6 21,6"></polyline>
+                </svg>
+                Clear Flight Plan
+            </button>
+        </div>
+    </div>
+
+    <div class="aircraft-info" id="aircraftInfo" style="display: none;">
+        <div class="aircraft-info-header">
+            <h3 class="aircraft-info-title">
+                <svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 821.77 816.06" style="width: 18px; height: 18px;">
+                    <defs>
+                        <style>
+                            .cls-1 {
+                                fill: none;
+                                stroke: currentColor;
+                                stroke-linejoin: round;
+                                stroke-width: 40px;
+                            }
+                        </style>
+                    </defs>
+                    <path class="cls-1" d="M74,119.06l64-64,409.86,113.91,96.14-94.91c61.21-58.57,126.77-65.12,148.3-40.7,19.33,21.92,9.37,79.7-32.84,128.19-33.73,38.76-72.98,72.34-109.47,108.51l114,410-63,62-183-331.5-189.56,187.95-4.44,132.55-64,65-72-160-168-77,62-61,138.47-5.56,189.91-193.44L74,119.06Z"/>
+                </svg>
+                Aircraft Information
+            </h3>
+        </div>
+        <div class="aircraft-info-body">
+            <div class="info-item"><span class="info-label">Callsign</span><span class="info-value" id="callsign">-</span></div>
+            <div class="info-item"><span class="info-label">Aircraft</span><span class="info-value" id="aircraft">-</span></div>
+            <div class="info-item"><span class="info-label">Position</span><span class="info-value" id="position">-</span></div>
+            <div class="info-item"><span class="info-label">Altitude</span><span class="info-value" id="alt">-</span></div>
+            <div class="info-item"><span class="info-label">Heading</span><span class="info-value" id="hdg">-</span></div>
+            <div class="info-item"><span class="info-label">Ground Speed</span><span class="info-value" id="gs">-</span></div>
+            <div class="info-item"><span class="info-label">Origin</span><span class="info-value" id="origin">-</span></div>
+            <div class="info-item"><span class="info-label">Destination</span><span class="info-value" id="destination">-</span></div>
+        </div>
+    </div>
+
+    <div class="status-bar">
+        <span id="status">System initialized - Ready for flight tracking</span>
+        <span id="status-indicator" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            <span id="status-dot" style="width: 12px; height: 12px; border-radius: 50%; background: #10b981;"></span>
+            <span id="status-text">Initialization succeeded</span>
+        </span>
+    </div>
+
+    <script>
+        let map, aircraftMarker, flightPlanRoute, currentFlightPlan = null, currentBaseLayer, currentOverlayLayer;
+        let aircraftData = { callsign: '', aircraft: '', latitude: null, longitude: null, altitude: null, heading: null, groundSpeed: null, origin: '', destination: '' };
+        let airportMarkers = L.layerGroup();
+        let airports = []; // Store airports data globally
+
+        function updateStatus(message, type = 'success') {
+            document.getElementById('status').textContent = message;
+            const dot = document.getElementById('status-dot');
+            const text = document.getElementById('status-text');
+            if (type === 'success') {
+                dot.style.background = '#10b981';
+                text.textContent = 'Succeeded';
+            } else if (type === 'warning') {
+                dot.style.background = '#eab308';
+                text.textContent = 'Warning';
+            } else if (type === 'error') {
+                dot.style.background = '#ef4444';
+                text.textContent = 'Failed';
+            }
+        }
+
+        async function initMap() {
+            map = L.map('map', { zoomControl: true, attributionControl: true }).setView([39.8283, -98.5795], 4);
+            map.createPane('labels');
+            map.getPane('labels').style.zIndex = 650;
+            map.getPane('labels').style.pointerEvents = 'none';
+            currentBaseLayer = L.maplibreGL({
+                style: 'https://api.tomtom.com/style/2/custom/style/dG9tdG9tQEBAQ3NzVldyNW9vRE8xNGM4UjtYzY1cmw1O_KElrrp1-a36.json?key=8c6bwORxaSZca2MW4UclcA8gGYt8lbmE',
+                attribution: '© TomTom | © OpenStreetMap contributors'
+            }).addTo(map);
+            map.zoomControl.setPosition('bottomright');
+            airportMarkers.addTo(map);
+            try {
+                const response = await fetch('airports.json');
+                airports = await response.json();
+                addAirportMarkers(airports);
+                map.on('zoomend', () => {
+                    addAirportMarkers(airports);
+                    updateStatus(`Updated airport markers for zoom level ${map.getZoom()}`, 'success');
+                });
+            } catch (error) {
+                updateStatus('Failed to load airports.json', 'error');
+            }
+            updateStatus('Map loaded successfully - Ready for flight tracking', 'success');
+        }
+
+        function addAirportMarkers(airports) {
+            airportMarkers.clearLayers();
+            const zoom = map.getZoom();
+            const filteredAirports = airports.filter(a => {
+                if (zoom < 5) return a.size === 1;
+                if (zoom <= 8) return a.size <= 2;
+                return true;
+            });
+
+            filteredAirports.forEach(a => {
+                const marker = L.marker([a.lat, a.lng], {
+                    icon: L.icon({
+                        iconUrl: 'image/airport.svg',
+                        iconSize: [70, 70],
+                        iconAnchor: [35, 35],
+                        popupAnchor: [0, -35]
+                    })
+                }).bindPopup(`${a.code}`);
+                airportMarkers.addLayer(marker);
+            });
+
+            airportMarkers.addTo(map);
+        }
+
+        function updateAircraftPosition() {
+            const lat = parseFloat(document.getElementById('latitude').value);
+            const lng = parseFloat(document.getElementById('longitude').value);
+            const alt = parseFloat(document.getElementById('altitude').value) || 0;
+            const hdg = parseFloat(document.getElementById('heading').value) || 0;
+            if (isNaN(lat) || isNaN(lng)) {
+                updateStatus('Please enter valid latitude and longitude', 'error');
+                return;
+            }
+            if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+                updateStatus('Coordinates out of range (lat: ±90, lng: ±180)', 'error');
+                return;
+            }
+            aircraftData.latitude = lat;
+            aircraftData.longitude = lng;
+            aircraftData.altitude = alt;
+            aircraftData.heading = hdg;
+
+            if (aircraftMarker) map.removeLayer(aircraftMarker);
+            const aircraftIcon = L.divIcon({
+                html: `<div style="font-size: 32px; transform: rotate(${hdg - 90}deg); color: #3b82f6;">✈</div>`,
+                className: 'aircraft-marker',
+                iconSize: [40, 40],
+                iconAnchor: [20, 20]
+            });
+            aircraftMarker = L.marker([lat, lng], { icon: aircraftIcon }).addTo(map);
+            map.setView([lat, lng], map.getZoom());
+            updateStatus(`Aircraft position updated to lat: ${lat.toFixed(4)}, lng: ${lng.toFixed(4)}, alt: ${alt}ft`, 'success');
+            showAircraftInfo();
+        }
+
+        function showAircraftInfo() {
+            const info = document.getElementById('aircraftInfo');
+            info.style.display = 'block';
+            document.getElementById('position').textContent = `${aircraftData.latitude?.toFixed(4)}, ${aircraftData.longitude?.toFixed(4)}`;
+            document.getElementById('alt').textContent = `${aircraftData.altitude || '-'} ft`;
+            document.getElementById('hdg').textContent = `${aircraftData.heading || '-'}°`;
+            document.getElementById('callsign').textContent = aircraftData.callsign || '-';
+            document.getElementById('aircraft').textContent = aircraftData.aircraft || '-';
+            document.getElementById('gs').textContent = aircraftData.groundSpeed || '-';
+            document.getElementById('origin').textContent = aircraftData.origin || '-';
+            document.getElementById('destination').textContent = aircraftData.destination || '-';
+        }
+
+        function changeMapLayer() {
+            const selectedLayer = document.getElementById('mapLayer').value;
+            if (currentBaseLayer) map.removeLayer(currentBaseLayer);
+            if (currentOverlayLayer) map.removeLayer(currentOverlayLayer);
+            currentOverlayLayer = null;
+
+            let baseUrl, baseAttribution, maxZoom = 19, options = {};
+            switch (selectedLayer) {
+                case 'satellite':
+                    baseUrl = 'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+                    baseAttribution = '© Google';
+                    options.subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
+                    break;
+                case 'terrain':
+                    baseUrl = 'https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}{r}.png';
+                    baseAttribution = 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+                    options.subdomains = 'abcd';
+                    maxZoom = 18;
+                    break;
+                case 'topo':
+                    baseUrl = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+                    baseAttribution = '© OpenTopoMap contributors';
+                    maxZoom = 17;
+                    break;
+                case 'dark':
+                    baseUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                    baseAttribution = '© CARTO';
+                    break;
+                case 'hybrid':
+                    baseUrl = 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+                    baseAttribution = '© Google';
+                    options.subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
+                    break;
+                case 'darkHybrid':
+                    baseUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                    baseAttribution = '© CARTO | © Google';
+                    currentBaseLayer = L.tileLayer(baseUrl, { attribution: baseAttribution, maxZoom }).addTo(map);
+                    currentOverlayLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}', {
+                        attribution: '',
+                        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                        pane: 'labels',
+                        maxZoom: 20
+                    }).addTo(map);
+                    addAirportMarkers(airports);
+                    updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
+                    return;
+                case 'tomtom':
+                    currentBaseLayer = L.maplibreGL({
+                        style: 'https://api.tomtom.com/style/2/custom/style/dG9tdG9tQEBAQ3NzVldyNW9vRE8xNGM4UjtYzY1cmw1O_KElrrp1-a36.json?key=8c6bwORxaSZca2MW4UclcA8gGYt8lbmE',
+                        attribution: '© TomTom | © OpenStreetMap contributors'
+                    }).addTo(map);
+                    addAirportMarkers(airports);
+                    updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
+                    return;
+                default:
+                    baseUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+                    baseAttribution = '© OpenStreetMap contributors';
+            }
+            currentBaseLayer = L.tileLayer(baseUrl, { attribution: baseAttribution, maxZoom, ...options }).addTo(map);
+            addAirportMarkers(airports);
+            updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
+        }
+
+        function importSimBrief() {
+            alert('SimBrief integration coming soon');
+        }
+
+        function handleDragOver(event) {
+            event.preventDefault();
+            event.currentTarget.classList.add('dragover');
+        }
+
+        function handleDragLeave(event) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('dragover');
+        }
+
+        function handleFileDrop(event) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('dragover');
+            const file = event.dataTransfer.files[0];
+            if (file) {
+                handleFileImport(file);
+            }
+        }
+
+        function handleFileImport(input) {
+            let file;
+            if (input instanceof File) {
+                file = input;
+            } else {
+                file = document.getElementById('simbriefFile').files[0];
+            }
+            if (!file) {
+                updateStatus('No file selected', 'error');
+                return;
+            }
+            updateStatus(`Imported flight plan file: ${file.name}`, 'success');
+        }
+
+        function centerOnAircraft() {
+            if (aircraftData.latitude && aircraftData.longitude) {
+                map.setView([aircraftData.latitude, aircraftData.longitude], 8);
+            } else {
+                updateStatus('Aircraft position not set', 'warning');
+            }
+        }
+
+        function clearFlightPlan() {
+            if (flightPlanRoute) map.removeLayer(flightPlanRoute);
+            flightPlanRoute = null;
+            currentFlightPlan = null;
+            updateStatus('Flight plan cleared', 'success');
+        }
+
+        initMap();
+    </script>
+</body>
+</html>
