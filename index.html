@@ -1155,11 +1155,19 @@ function initMap() {
             map.fitBounds([[-60, -180], [80, 180]]);
             
             map.createPane('labels');
-            map.getPane('labels').style.zIndex = 650;
-            map.getPane('labels').style.pointerEvents = 'none';
-            currentBaseLayer = L.maplibreGL({
-                style: 'https://api.tomtom.com/style/2/custom/style/dG9tdG9tQEBAQ3NzVldyNW9vRE8xNGM4UjtYzY1cmw1O_KElrrp1-a36.json?key=8c6bwORxaSZca2MW4UclcA8gGYt8lbmE',
-                attribution: '© TomTom | © OpenStreetMap contributors'
+            map.getPane('labels').style = "z-index: 650; pointer-events: none;";
+            map.getPane('markerPane').style.zIndex = 650;
+
+            // Use a fallback OpenStreetMap layer
+            currentBaseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19,
+                tileSize: 256,
+                zoomOffset: 0,
+                updateWhenIdle: true,
+                keepBuffer: 6,
+                edgeBufferTiles: 2,
+                tileCache: true
             }).addTo(map);
             console.log('Fallback OpenStreetMap layer added');
             updateLoadingProgress(1);
@@ -1468,7 +1476,6 @@ function initMap() {
     updateStatus(`Aircraft position updated to lat: ${lat.toFixed(4)}, lng: ${lng.toFixed(4)}, alt: ${alt}ft`, 'success');
     showAircraftInfo();
 }
-
     function showAircraftInfo() {
         console.log('Showing aircraft info:', aircraftData);
         const info = document.getElementById('aircraftInfo');
@@ -2092,6 +2099,39 @@ function parseSimBriefXML(xmlString) {
 
         showAircraftInfo();
         updateStatus(`Flight plan loaded: ${aircraftData.origin} → ${aircraftData.destination} (${waypoints.length} waypoints)`, 'success');
+    } catch (error) {
+        console.error('XML parse error:', error);
+        updateStatus(`Failed to parse XML: ${error.message}`, 'error');
+    }
+}
+
+    async function initialize() {
+        console.log('Starting FlyCharts initialization at', new Date().toISOString());
+        updateLoadingProgress(0);
+        try {
+            if (!document.getElementById('map')) {
+                console.error('Map container not found');
+                updateStatus('Map container not found', 'error');
+                updateLoadingProgress(0);
+                return;
+            }
+            await initMap();
+            initWebSocket();
+            setInterval(fetchAircraftData, 2000);
+            updateStatus('FlyCharts with SimConnect integration ready', 'success');
+        } catch (e) {
+            console.error('Initialization error:', e);
+            updateStatus(`Initialization failed: ${e.message}`, 'error');
+            updateLoadingProgress(0);
+        }
+    }
+
+    // Start initialization
+    console.log('Script loaded, starting initialization');
+    initialize();
+</script>
+cript>
+(${waypoints.length} waypoints)`, 'success');
     } catch (error) {
         console.error('XML parse error:', error);
         updateStatus(`Failed to parse XML: ${error.message}`, 'error');
