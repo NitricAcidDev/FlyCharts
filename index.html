@@ -6,10 +6,13 @@
     <title>Fly Charts</title>
     <link rel="icon" type="image/svg+xml" href="image/favicon.svg">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link href='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css' rel='stylesheet' />
     <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
     <script src='https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js'></script>
     <script src='https://unpkg.com/@maplibre/maplibre-gl-leaflet@latest/leaflet-maplibre-gl.js'></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -24,7 +27,82 @@
             color: #ffffff;
         }
 
-        #map { width: 100vw; height: 100vh; position: relative; }
+        #map { width: 100vw; height: 100vh; position: relative; z-index: 1; }
+
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0e0e0e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 1001;
+            transition: opacity 0.5s;
+        }
+        #loading-screen.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        #logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        #logo-img {
+            width: 230px;
+            height: auto;
+            filter: invert(100%) sepia(100%) saturate(500%) hue-rotate(180deg);
+            margin-right: 20px;
+        }
+        #logo-text {
+            font-size: 96px;
+            font-weight: bold;
+        }
+        #progress-bar-container {
+            width: 80vw;
+            height: 30px;
+            background: #001b35; /* Dark background to match theme */
+            border-radius: 15px;
+            overflow: visible; /* Prevent clipping */
+            position: relative;
+            z-index: 1002; /* Above loading screen */
+        }
+        #progress-bar {
+            width: 0;
+            height: 30px; /* Explicit height for visibility */
+            background: #ae00ff !important; /* Bright purple, override conflicts */
+            border-radius: 15px;
+            transition: width 2s ease; /* Smooth transition */
+            z-index: 1003; /* Ensure bar is visible */
+        }
+        @keyframes fade-in-up {
+            0% {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            100% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        #status-message {
+            margin-top: 20px;
+            font-size: 24px;
+            text-align: center;
+            color: #ffffff !important; /* Ensure text visibility */
+            opacity: 1; /* Default visible */
+            z-index: 1004; /* Above other elements */
+            display: block; /* Ensure text is rendered */
+        }
+        #status-message.animate {
+            animation: fade-in-up 0.6s ease forwards;
+        }
 
         .header {
             position: absolute;
@@ -333,9 +411,84 @@
             gap: 8px;
             margin-bottom: 12px;
         }
+
+        .custom-cluster-large, .custom-cluster-medium {
+            position: relative;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .custom-cluster-large img, .custom-cluster-medium img {
+            width: 100%;
+            height: 100%;
+        }
+        .custom-cluster-large div, .custom-cluster-medium div {
+            position: absolute;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            text-align: center;
+            line-height: 40px;
+            text-shadow: 0 0 3px rgba(0, 0, 0, 0.8);
+        }
+        .leaflet-popup-content-wrapper {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            font-family: 'Arial', sans-serif;
+        }
+        .leaflet-popup-content {
+            margin: 10px;
+            line-height: 1.5;
+        }
+        .leaflet-popup-content b {
+            font-size: 14px;
+            color: #333;
+        }
+        .leaflet-popup-content p {
+            margin: 5px 0;
+            font-size: 12px;
+            color: #555;
+        }
+
+        .legend-content {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 13px;
+            color: #cbd5e1;
+        }
+        .legend-item img {
+            width: 20px;
+            height: 20px;
+        }
+        .legend-item div.line {
+            width: 20px;
+            height: 4px;
+            border-radius: 2px;
+        }
     </style>
 </head>
 <body>
+    <div id="loading-screen">
+        <div id="logo-container">
+            <img id="logo-img" src="image/airplaneoutline.svg" alt="Fly Charts Logo">
+            <span id="logo-text">Fly Charts</span>
+        </div>
+        <div id="progress-bar-container">
+            <div id="progress-bar"></div>
+        </div>
+        <div id="status-message">Initializing...</div>
+    </div>
+
     <div class="header">
         <div class="logo">
             <img src="image/airplaneoutline.svg" class="logo-icon" alt="Airplane">
@@ -442,10 +595,10 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width: 18px; height: 18px;">
                     <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path>
                 </svg>
-                SimBrief Integration
+                Flight Plans
             </div>
             <div class="simbrief-format-info">
-                <strong>Export Format:</strong> Use SimBrief's "OFP" (Operational Flight Plan) format in JSON or download the flight plan as PLN/FPL format for import.
+                <strong>Export Format:</strong> Use SimBrief's "OFP" (Operational Flight Plan) Formatted "XML Data File" Export Type for Succesful import.
             </div>
             <div class="form-group">
                 <label class="form-label">Flight ID</label>
@@ -456,7 +609,7 @@
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
                     <polyline points="7,10 12,15 17,10"></polyline>
                 </svg>
-                Import Flight Plan
+                Import Simbrief Flight Plan
             </button>
             <div class="file-upload-area" onclick="document.getElementById('simbriefFile').click()" ondrop="handleFileDrop(event)" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)">
                 <div class="file-upload-text">
@@ -467,9 +620,75 @@
                     </svg>
                     Drop flight plan file here or click to browse
                 </div>
-                <div class="file-upload-formats">Supports: .json, .fms</div>
+                <div class="file-upload-formats">Supports: .xml (OFP XML)</div>
             </div>
-            <input type="file" id="simbriefFile" accept=".json,.fms" onchange="handleFileImport()" style="display: none;" />
+            <input type="file" id="simbriefFile" accept=".xml" onchange="handleFileImport(event)" style="display: none;" />
+        </div>
+
+        <div class="sidebar-section">
+            <div class="section-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 6h16M4 12h16M4 18h16"></path>
+                </svg>
+                Map Legend
+            </div>
+<div class="sidebar-section">
+    <div class="section-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 6h16M4 12h16M4 18h16"></path>
+        </svg>
+        Map Legend
+    </div>
+    <div class="legend-content">
+        <div class="legend-item">
+            <svg viewBox="0 0 182.97 184.01" width="20" height="20" transform="rotate(-45)">
+                <path fill="#3b82f6" stroke="#2b6cb0" stroke-miterlimit="10" stroke-width="8" d="M171.69,80.18L23.27,5.49C11.17-.6-1.17,13.24,6.24,24.56l39.43,60.19c2.89,4.41,2.89,10.1,0,14.51L6.24,159.44c-7.42,11.32,4.93,25.16,17.02,19.08l148.42-74.69c9.71-4.89,9.71-18.76,0-23.65Z"/>
+            </svg> Aircraft
+        </div>
+        <div class="legend-item">
+            <img src="image/airporticon.svg"> Large Airport
+            <div class="toggle-switch active" id="large-airport-toggle" onclick="toggleAirportMarkers('large')"></div>
+        </div>
+        <div class="legend-item">
+            <img src="image/airportmediumicon.svg"> Medium Airport
+            <div class="toggle-switch active" id="medium-airport-toggle" onclick="toggleAirportMarkers('medium')"></div>
+        </div>
+        <div class="legend-item">
+            <span style="color: #06B6D4; font-size: 16px;">△</span> Waypoint/Intersection
+            <div class="toggle-switch active" id="waypoint-toggle" onclick="toggleWaypointMarkers('waypoint')"></div>
+        </div>
+        <div class="legend-item">
+            <span style="color: #8B5CF6; font-size: 16px;">◊</span> VOR
+            <div class="toggle-switch active" id="vor-toggle" onclick="toggleWaypointMarkers('vor')"></div>
+        </div>
+        <div class="legend-item">
+            <span style="color: #F59E0B; font-size: 16px;">○</span> NDB
+            <div class="toggle-switch active" id="ndb-toggle" onclick="toggleWaypointMarkers('ndb')"></div>
+        </div>
+        <div class="legend-item">
+            <span style="color: #FFFF00; font-size: 16px;">☆</span> Top of Climb / Descent
+            <div class="toggle-switch active" id="toc-toggle" onclick="toggleWaypointMarkers('toc')"></div>
+        </div>
+        <div class="legend-item">
+            <span style="color: #22C55E; font-size: 16px;">●</span> Origin Airport
+        </div>
+        <div class="legend-item">
+            <span style="color: #EF4444; font-size: 16px;">●</span> Destination Airport
+        </div>
+        <div class="legend-item">
+            <div class="line" style="background: #90EE90;"></div> Departure Route
+        </div>
+        <div class="legend-item">
+            <div class="line" style="background: #00BFFF;"></div> Enroute
+        </div>
+        <div class="legend-item">
+            <div class="line" style="background: #DA70D6;"></div> Arrival Route
+        </div>
+        <div class="legend-item">
+            <div class="line" style="background: #FFB6C1;"></div> Approach
+        </div>
+    </div>
+</div>
         </div>
 
         <div class="sidebar-section">
@@ -535,510 +754,1414 @@
     </div>
 
     <script>
-        // EXISTING VARIABLES
-        let map, aircraftMarker, flightPlanRoute, currentFlightPlan = null, currentBaseLayer, currentOverlayLayer;
-        let aircraftData = { callsign: '', aircraft: '', latitude: null, longitude: null, altitude: null, heading: null, groundSpeed: null, origin: '', destination: '' };
-        let airportMarkers = L.layerGroup();
-        let airports = [];
+    // Variables
+    let map, aircraftMarker, flightPlanRoute, currentFlightPlan = null, currentBaseLayer, currentOverlayLayer;
+    let aircraftData = { callsign: '', aircraft: '', latitude: null, longitude: null, altitude: null, heading: null, groundSpeed: null, origin: '', destination: '' };
+    let socket = null;
+    let autoUpdateEnabled = true;
+    let isSimConnectConnected = false;
+    let lockMapToAircraft = true;
+    let airportMarkers = { large: [], medium: [] };
+    let clusterGroups = { large: null, medium: null };
+    let allAirports = [];
+    let loadingProgress = 0;
+    let totalSteps = 4;
+    let statusMessages = {
+        0: 'Initializing...',
+        1: 'Loading map tiles...',
+        2: 'Connecting to SimConnect...',
+        3: 'Loading Large And Medium Airports (skipping small airports, helipads, and closed airports)...',
+        4: 'Fetching aircraft data...'
+    };
 
-        // NEW VARIABLES for SimConnect
-        let socket = null;
-        let autoUpdateEnabled = true;
-        let isSimConnectConnected = false;
-        let lockMapToAircraft = true;
+    // Fallback airport data
+    const fallbackAirports = [
+        { code: 'KJFK', name: 'John F Kennedy International', lat: 40.6398, lng: -73.7789, iata: 'JFK', elevation: '13 ft', country: 'US', type: 'large_airport' },
+        { code: 'KLAX', name: 'Los Angeles International', lat: 33.9425, lng: -118.4081, iata: 'LAX', elevation: '125 ft', country: 'US', type: 'large_airport' },
+        { code: 'EGLL', name: 'London Heathrow', lat: 51.4706, lng: -0.4619, iata: 'LHR', elevation: '83 ft', country: 'GB', type: 'large_airport' },
+        { code: 'KMCO', name: 'Orlando International', lat: 28.4294, lng: -81.3090, iata: 'MCO', elevation: '96 ft', country: 'US', type: 'medium_airport' },
+        { code: 'EDDF', name: 'Frankfurt Airport', lat: 50.0333, lng: 8.5706, iata: 'FRA', elevation: '364 ft', country: 'DE', type: 'large_airport' }
+    ];
 
-        // Initialize WebSocket connection
-        function initWebSocket() {
-            if (typeof io !== 'undefined') {
-                socket = io();
-                
-                socket.on('connect', function() {
-                    console.log('Connected to server');
-                    updateStatus('Connected to server', 'success');
-                });
-                
-                socket.on('disconnect', function() {
-                    console.log('Disconnected from server');
-                    updateStatus('Disconnected from server', 'warning');
-                    updateSimConnectStatus({ connected: false });
-                });
-                
-                socket.on('simconnect_status', function(data) {
-                    updateSimConnectStatus(data);
-                });
-                
-                socket.on('aircraft_position_update', function(data) {
-                    if (autoUpdateEnabled && data) {
-                        handleRealtimePositionUpdate(data);
-                    }
-                });
-                
-                socket.on('simconnect_error', function(data) {
-                    updateStatus(`SimConnect error: ${data.message}`, 'error');
-                });
-            } else {
-                updateStatus('Socket.IO not available', 'error');
+    // Define icons
+    const largeAirportIcon = L.icon({
+        iconUrl: 'image/airport.svg',
+        iconSize: [76, 76],
+        iconAnchor: [38, 38],
+        popupAnchor: [0, -76]
+    });
+    const mediumAirportIcon = L.icon({
+        iconUrl: 'image/airportmedium.svg',
+        iconSize: [68, 68],
+        iconAnchor: [34, 34],
+        popupAnchor: [0, -68]
+    });
+
+    // Custom cluster icon
+    function createClusterIcon(cluster, type) {
+        const count = cluster.getAllChildMarkers().length;
+        const iconUrl = type === 'large' ? 'image/cluster.svg' : 'image/clustermedium.svg';
+        return L.divIcon({
+            html: `<img src="${iconUrl}" alt="${type} cluster" style="width: 40px; height: 40px;"><div>${count}</div>`,
+            className: `custom-cluster-${type}`,
+            iconSize: [40, 40],
+            iconAnchor: [20, 40]
+        });
+    }
+
+    // Debounce function
+    function debounce(func, delay) {
+        let timeout;
+        return function() {
+            const context = this;
+            const args = arguments;
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    // Throttle function
+    function throttle(func, wait) {
+        let lastCall = 0;
+        return function (...args) {
+            const now = Date.now();
+            if (now - lastCall >= wait) {
+                lastCall = now;
+                return func(...args);
             }
+        };
+    }
+
+    // Update loading progress
+    function updateLoadingProgress(step) {
+        loadingProgress = Math.min(step, totalSteps);
+        const percentage = (loadingProgress / totalSteps) * 100;
+        const progressBar = document.getElementById('progress-bar');
+        const statusMessage = document.getElementById('status-message');
+        
+        // Update progress bar width
+        progressBar.style.width = `${percentage}%`;
+        
+        // Reset and trigger status message animation
+        statusMessage.style.opacity = '0'; // Reset opacity
+        statusMessage.className = ''; // Reset animation
+        statusMessage.textContent = statusMessages[loadingProgress] || 'Loading...';
+        void statusMessage.offsetWidth; // Force reflow to restart animation
+        statusMessage.className = 'animate';
+        
+        if (loadingProgress >= totalSteps) {
+            setTimeout(() => {
+                document.getElementById('loading-screen').classList.add('hidden');
+            }, 500);
         }
+    }
 
-        // SimConnect Functions
-        async function connectSimConnect() {
-            const connectBtn = document.getElementById('connect-btn');
-            const disconnectBtn = document.getElementById('disconnect-btn');
-            
-            connectBtn.disabled = true;
-            connectBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg> Connecting...';
-            updateSimConnectStatus({ connected: false, connecting: true });
+    // Update status
+    function updateStatus(message, type = 'success') {
+        console.log(`Status update: ${message} (${type})`);
+        document.getElementById('status').textContent = message;
+        const dot = document.getElementById('status-dot');
+        const text = document.getElementById('status-text');
+        if (type === 'success') {
+            dot.style.background = '#10b981';
+            text.textContent = 'Succeeded';
+        } else if (type === 'warning') {
+            dot.style.background = '#eab308';
+            text.textContent = 'Warning';
+        } else if (type === 'error') {
+            dot.style.background = '#ef4444';
+            text.textContent = 'Failed';
+        }
+    }
 
-            try {
-                const response = await fetch('/api/simconnect/connect', { 
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const result = await response.json();
-                
-                if (result.success) {
-                    isSimConnectConnected = true;
-                    connectBtn.disabled = true;
-                    disconnectBtn.disabled = false;
-                    updateSimConnectStatus({ connected: true });
-                    updateStatus('Connected to SimConnect', 'success');
-                    
-                    if (autoUpdateEnabled) {
-                        document.getElementById('realtime-indicator').style.display = 'flex';
-                    }
-                } else {
-                    updateSimConnectStatus({ connected: false });
-                    updateStatus(`Failed to connect: ${result.message}`, 'error');
-                }
-            } catch (error) {
-                updateSimConnectStatus({ connected: false });
-                updateStatus(`Connection error: ${error.message}`, 'error');
-            } finally {
-                connectBtn.disabled = false;
-                connectBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg> Connect';
+    // Initialize WebSocket connection
+    function initWebSocket() {
+        console.log('Attempting to initialize WebSocket');
+        if (typeof io === 'undefined') {
+            console.error('Socket.IO not loaded');
+            updateStatus('Socket.IO not available', 'error');
+            updateLoadingProgress(2);
+            // Proceed to next step to avoid stuck loading screen
+            setTimeout(() => updateLoadingProgress(4), 3000);
+            return;
+        }
+        socket = io('http://localhost:5500');
+        
+        socket.on('connect', function() {
+            console.log('WebSocket connected to server');
+            updateStatus('Connected to server', 'success');
+            updateLoadingProgress(2);
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('WebSocket disconnected from server');
+            updateStatus('Disconnected from server', 'warning');
+            updateSimConnectStatus({ connected: false });
+            document.getElementById('loading-screen').classList.remove('hidden');
+            updateLoadingProgress(0);
+        });
+        
+        socket.on('simconnect_status', function(data) {
+            console.log('SimConnect status:', data);
+            updateSimConnectStatus(data);
+            if (data.connected) {
+                updateLoadingProgress(3);
             }
-        }
-
-        async function disconnectSimConnect() {
-            const connectBtn = document.getElementById('connect-btn');
-            const disconnectBtn = document.getElementById('disconnect-btn');
-            
-            disconnectBtn.disabled = true;
-            updateSimConnectStatus({ connected: false, connecting: true });
-
-            try {
-                const response = await fetch('/api/simconnect/disconnect', { 
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                });
-                const result = await response.json();
-                
-                if (result.success) {
-                    isSimConnectConnected = false;
-                    connectBtn.disabled = false;
-                    disconnectBtn.disabled = true;
-                    document.getElementById('realtime-indicator').style.display = 'none';
-                    updateSimConnectStatus({ connected: false });
-                    updateStatus('Disconnected from SimConnect', 'success');
-                } else {
-                    updateStatus(`Failed to disconnect: ${result.message}`, 'error');
-                }
-            } catch (error) {
-                updateSimConnectStatus({ connected: false });
-                updateStatus(`Disconnect error: ${error.message}`, 'error');
-            } finally {
-                disconnectBtn.disabled = true;
+        });
+        
+        socket.on('aircraft_position_update', throttle(function(data) {
+            console.log('Received aircraft position update:', data);
+            if (autoUpdateEnabled && data) {
+                handleRealtimePositionUpdate(data);
+                updateLoadingProgress(4);
             }
-        }
+        }, 500));
+        
+        socket.on('simconnect_error', function(data) {
+            console.error('SimConnect error:', data);
+            updateStatus(`SimConnect error: ${data.message}`, 'error');
+            // Proceed to next step to avoid stuck loading screen
+            setTimeout(() => updateLoadingProgress(4), 3000);
+        });
 
-        function updateSimConnectStatus(statusData) {
-            const statusElement = document.getElementById('simconnect-status');
-            const connectBtn = document.getElementById('connect-btn');
-            const disconnectBtn = document.getElementById('disconnect-btn');
+        // Fallback if WebSocket connection fails
+        setTimeout(() => {
+            if (!socket.connected) {
+                console.warn('WebSocket connection timed out');
+                updateStatus('WebSocket connection failed, proceeding', 'warning');
+                updateLoadingProgress(4);
+            }
+        }, 3000);
+    }
+
+    // SimConnect Functions
+    async function connectSimConnect() {
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        
+        console.log('Attempting to connect to SimConnect');
+        connectBtn.disabled = true;
+        connectBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg> Connecting...';
+        updateSimConnectStatus({ connected: false, connecting: true });
+
+        try {
+            const response = await fetch('/api/simconnect/connect', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+            console.log('SimConnect connect response:', result);
             
-            if (statusData.connecting) {
-                statusElement.className = 'status-indicator status-connecting';
-                statusElement.innerHTML = '<div class="status-dot"></div><span>Connecting...</span>';
-                connectBtn.disabled = true;
-                disconnectBtn.disabled = true;
-            } else if (statusData.connected) {
-                statusElement.className = 'status-indicator status-connected';
-                statusElement.innerHTML = '<div class="status-dot"></div><span>Connected</span>';
+            if (result.success) {
+                isSimConnectConnected = true;
                 connectBtn.disabled = true;
                 disconnectBtn.disabled = false;
-                isSimConnectConnected = true;
+                updateSimConnectStatus({ connected: true });
+                updateStatus('Connected to SimConnect', 'success');
+                updateLoadingProgress(3);
                 
                 if (autoUpdateEnabled) {
                     document.getElementById('realtime-indicator').style.display = 'flex';
                 }
             } else {
-                statusElement.className = 'status-indicator status-disconnected';
-                statusElement.innerHTML = '<div class="status-dot"></div><span>Disconnected</span>';
+                updateSimConnectStatus({ connected: false });
+                updateStatus(`Failed to connect: ${result.message}`, 'error');
+                setTimeout(() => updateLoadingProgress(4), 3000);
+            }
+        } catch (error) {
+            console.error('SimConnect connection error:', error);
+            updateSimConnectStatus({ connected: false });
+            updateStatus(`Connection error: ${error.message}`, 'error');
+            setTimeout(() => updateLoadingProgress(4), 3000);
+        } finally {
+            connectBtn.disabled = false;
+            connectBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg> Connect';
+        }
+    }
+
+    async function disconnectSimConnect() {
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        
+        console.log('Attempting to disconnect from SimConnect');
+        disconnectBtn.disabled = true;
+        updateSimConnectStatus({ connected: false, connecting: true });
+
+        try {
+            const response = await fetch('/api/simconnect/disconnect', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const result = await response.json();
+            console.log('SimConnect disconnect response:', result);
+            
+            if (result.success) {
+                isSimConnectConnected = false;
                 connectBtn.disabled = false;
                 disconnectBtn.disabled = true;
-                isSimConnectConnected = false;
                 document.getElementById('realtime-indicator').style.display = 'none';
+                updateSimConnectStatus({ connected: false });
+                updateStatus('Disconnected from SimConnect', 'success');
+                document.getElementById('loading-screen').classList.remove('hidden');
+                updateLoadingProgress(0);
+            } else {
+                updateStatus(`Failed to disconnect: ${result.message}`, 'error');
             }
+        } catch (error) {
+            console.error('SimConnect disconnect error:', error);
+            updateSimConnectStatus({ connected: false });
+            updateStatus(`Disconnect error: ${error.message}`, 'error');
+        } finally {
+            disconnectBtn.disabled = true;
         }
+    }
 
-        function toggleAutoUpdate() {
-            const toggle = document.getElementById('auto-update-toggle');
-            const indicator = document.getElementById('realtime-indicator');
-            
-            autoUpdateEnabled = !autoUpdateEnabled;
+    function updateSimConnectStatus(statusData) {
+        const statusElement = document.getElementById('simconnect-status');
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        
+        console.log('Updating SimConnect status:', statusData);
+        if (statusData.connecting) {
+            statusElement.className = 'status-indicator status-connecting';
+            statusElement.innerHTML = '<div class="status-dot"></div><span>Connecting...</span>';
+            connectBtn.disabled = true;
+            disconnectBtn.disabled = true;
+        } else if (statusData.connected) {
+            statusElement.className = 'status-indicator status-connected';
+            statusElement.innerHTML = '<div class="status-dot"></div><span>Connected</span>';
+            connectBtn.disabled = true;
+            disconnectBtn.disabled = false;
+            isSimConnectConnected = true;
             
             if (autoUpdateEnabled) {
-                toggle.classList.add('active');
-                if (isSimConnectConnected) {
-                    indicator.style.display = 'flex';
-                }
-            } else {
-                toggle.classList.remove('active');
-                indicator.style.display = 'none';
+                document.getElementById('realtime-indicator').style.display = 'flex';
             }
+        } else {
+            statusElement.className = 'status-indicator status-disconnected';
+            statusElement.innerHTML = '<div class="status-dot"></div><span>Disconnected</span>';
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            isSimConnectConnected = false;
+            document.getElementById('realtime-indicator').style.display = 'none';
         }
+    }
 
-        function toggleLockMap() {
-            const toggle = document.getElementById('lock-map-toggle');
-            lockMapToAircraft = !lockMapToAircraft;
-            
-            if (lockMapToAircraft) {
-                toggle.classList.add('active');
-                if (aircraftData.latitude && aircraftData.longitude) {
-                    centerOnAircraft();
-                }
-            } else {
-                toggle.classList.remove('active');
+    function toggleAutoUpdate() {
+        const toggle = document.getElementById('auto-update-toggle');
+        const indicator = document.getElementById('realtime-indicator');
+        
+        autoUpdateEnabled = !autoUpdateEnabled;
+        console.log('Auto-update toggled:', autoUpdateEnabled);
+        
+        if (autoUpdateEnabled) {
+            toggle.classList.add('active');
+            if (isSimConnectConnected) {
+                indicator.style.display = 'flex';
             }
+        } else {
+            toggle.classList.remove('active');
+            indicator.style.display = 'none';
         }
+    }
 
-        function handleRealtimePositionUpdate(positionData) {
-            if (!autoUpdateEnabled) return;
-            
-            // Validate position data
-            if (!positionData || isNaN(positionData.latitude) || isNaN(positionData.longitude)) {
-                updateStatus('Invalid position data received', 'error');
-                return;
-            }
-
-            // Convert heading from radians to degrees and normalize to [0, 360°]
-            let heading = (positionData.heading || 0) * (180 / Math.PI); // Convert radians to degrees
-            heading = ((heading % 360) + 360) % 360; // Normalize to 0-360°
-
-            // Round values for display
-            const latitude = Number(positionData.latitude.toFixed(4));
-            const longitude = Number(positionData.longitude.toFixed(4));
-            const altitude = Math.round(positionData.altitude);
-            const groundSpeed = Math.round(positionData.ground_speed || 0);
-            heading = Math.round(heading);
-
-            // Update form fields
-            document.getElementById('latitude').value = latitude;
-            document.getElementById('longitude').value = longitude;
-            document.getElementById('altitude').value = altitude;
-            document.getElementById('heading').value = heading;
-            
-            // Update aircraft data (exclude callsign for SimBrief integration)
-            aircraftData.latitude = positionData.latitude;
-            aircraftData.longitude = positionData.longitude;
-            aircraftData.altitude = altitude;
-            aircraftData.heading = heading;
-            aircraftData.groundSpeed = groundSpeed;
-            aircraftData.aircraft = positionData.aircraft_title || 'Unknown';
-            
-            // Update aircraft marker
-            if (aircraftMarker) map.removeLayer(aircraftMarker);
-            const aircraftIcon = L.divIcon({
-                html: `<div style="font-size: 32px; transform: rotate(${heading - 90}deg); color: #3b82f6;">✈</div>`,
-                className: 'aircraft-marker',
-                iconSize: [40, 40],
-                iconAnchor: [20, 20]
-            });
-            aircraftMarker = L.marker([latitude, longitude], { icon: aircraftIcon }).addTo(map);
-            
-            // Center map on aircraft if locked
-            if (lockMapToAircraft) {
+    function toggleLockMap() {
+        const toggle = document.getElementById('lock-map-toggle');
+        lockMapToAircraft = !lockMapToAircraft;
+        console.log('Lock map toggled:', lockMapToAircraft);
+        
+        if (lockMapToAircraft) {
+            toggle.classList.add('active');
+            if (aircraftData.latitude && aircraftData.longitude) {
                 centerOnAircraft();
             }
-            
-            // Show and update aircraft info panel
-            showAircraftInfo();
-            
-            // Update status
-            updateStatus(`Live position: ${latitude}, ${longitude}, ${altitude}ft`, 'success');
+        } else {
+            toggle.classList.remove('active');
+        }
+    }
+
+    function handleRealtimePositionUpdate(positionData) {
+        if (!autoUpdateEnabled) return;
+        
+        console.log('Handling realtime position update:', positionData);
+        if (!positionData || isNaN(positionData.latitude) || isNaN(positionData.longitude)) {
+            console.error('Invalid position data:', positionData);
+            updateStatus('Invalid position data received', 'error');
+            return;
         }
 
-        // EXISTING FUNCTIONS
-        function updateStatus(message, type = 'success') {
-            document.getElementById('status').textContent = message;
-            const dot = document.getElementById('status-dot');
-            const text = document.getElementById('status-text');
-            if (type === 'success') {
-                dot.style.background = '#10b981';
-                text.textContent = 'Succeeded';
-            } else if (type === 'warning') {
-                dot.style.background = '#eab308';
-                text.textContent = 'Warning';
-            } else if (type === 'error') {
-                dot.style.background = '#ef4444';
-                text.textContent = 'Failed';
-            }
+        let heading = (positionData.heading || 0) * (180 / Math.PI);
+        heading = ((heading % 360) + 360) % 360;
+
+        const latitude = Number(positionData.latitude.toFixed(4));
+        const longitude = Number(positionData.longitude.toFixed(4));
+        const altitude = Math.round(positionData.altitude);
+        const groundSpeed = Math.round(positionData.ground_speed || 0);
+        heading = Math.round(heading);
+
+        document.getElementById('latitude').value = latitude;
+        document.getElementById('longitude').value = longitude;
+        document.getElementById('altitude').value = altitude;
+        document.getElementById('heading').value = heading;
+        
+        aircraftData.latitude = positionData.latitude;
+        aircraftData.longitude = positionData.longitude;
+        aircraftData.altitude = altitude;
+        aircraftData.heading = heading;
+        aircraftData.groundSpeed = groundSpeed;
+        aircraftData.aircraft = positionData.aircraft_title || 'Unknown';
+        
+        if (aircraftMarker) map.removeLayer(aircraftMarker);
+        const aircraftIcon = L.divIcon({
+            html: `<div style="font-size: 32px; transform: rotate(${heading - 90}deg); color: #3b82f6;">✈</div>`,
+            className: 'aircraft-marker',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20]
+        });
+        aircraftMarker = L.marker([latitude, longitude], { icon: aircraftIcon }).addTo(map);
+        
+        if (lockMapToAircraft) {
+            centerOnAircraft();
+        }
+        
+        showAircraftInfo();
+        updateStatus(`Live position: ${latitude}, ${longitude}, ${altitude}ft`, 'success');
+        updateLoadingProgress(4);
+    }
+
+function initMap() {
+    console.log('Starting map initialization');
+    try {
+        if (typeof L === 'undefined') {
+            console.error('Leaflet not loaded');
+            updateStatus('Failed to load Leaflet library', 'error');
+            updateLoadingProgress(1);
+            return;
         }
 
-        async function initMap() {
-            map = L.map('map', { zoomControl: true, attributionControl: true }).setView([39.8283, -98.5795], 4);
+        map = L.map('map', {
+            zoomControl: true,
+            attributionControl: true,
+            preferCanvas: true,
+            renderer: L.canvas(),
+            zoomAnimationThreshold: 4,
+            fadeAnimation: false,
+            maxBoundsViscosity: 1.0,
+            maxZoom: 19 // Set maxZoom to prevent MarkerCluster error
+        }).setView([40.6398, -73.7789], 4); // Centered on KJFK
+        console.log('Map created with view [40.6398, -73.7789], zoom 4');
+
+            // Fit bounds to include most airports
+            map.fitBounds([[-60, -180], [80, 180]]);
+            
             map.createPane('labels');
-            map.getPane('labels').style.zIndex = 650;
-            map.getPane('labels').style.pointerEvents = 'none';
-            currentBaseLayer = L.maplibreGL({
-                style: 'https://api.tomtom.com/style/2/custom/style/dG9tdG9tQEBAQ3NzVldyNW9vRE8xNGM4UjtYzY1cmw1O_KElrrp1-a36.json?key=8c6bwORxaSZca2MW4UclcA8gGYt8lbmE',
-                attribution: '© TomTom | © OpenStreetMap contributors'
+            map.getPane('labels').style = "z-index: 650; pointer-events: none;";
+            map.getPane('markerPane').style.zIndex = 650;
+
+            // Use a fallback OpenStreetMap layer
+            currentBaseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19,
+                tileSize: 256,
+                zoomOffset: 0,
+                updateWhenIdle: true,
+                keepBuffer: 6,
+                edgeBufferTiles: 2,
+                tileCache: true
             }).addTo(map);
+            console.log('Fallback OpenStreetMap layer added');
+            updateLoadingProgress(1);
+
             map.zoomControl.setPosition('bottomright');
-            airportMarkers.addTo(map);
+
+            // Initialize cluster groups
+            if (typeof L.MarkerClusterGroup === 'undefined') {
+                console.error('Leaflet.MarkerCluster not loaded');
+                updateStatus('Failed to load MarkerCluster library', 'error');
+                return;
+            }
+
+            clusterGroups.large = L.markerClusterGroup({
+                maxClusterRadius: zoom => Math.max(260 - zoom * 8, 30),
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: true,
+                zoomToBoundsOnClick: true,
+                disableClusteringAtZoom: 10,
+                iconCreateFunction: cluster => createClusterIcon(cluster, 'large'),
+                chunkedLoading: true,
+                chunkInterval: 50,
+                removeOutsideVisibleBounds: false // Disabled initially
+            }).addTo(map);
+            clusterGroups.medium = L.markerClusterGroup({
+                maxClusterRadius: zoom => Math.max(260 - zoom * 8, 30),
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: true,
+                zoomToBoundsOnClick: true,
+                disableClusteringAtZoom: 10,
+                iconCreateFunction: cluster => createClusterIcon(cluster, 'medium'),
+                chunkedLoading: true,
+                chunkInterval: 50,
+                removeOutsideVisibleBounds: false // Disabled initially
+            }).addTo(map);
+            console.log('Cluster groups initialized');
+
+            // Try loading TomTom layer
             try {
-                const response = await fetch('airports.json');
-                airports = await response.json();
-                addAirportMarkers(airports);
-                map.on('zoomend', () => {
-                    addAirportMarkers(airports);
-                    updateStatus(`Updated airport markers for zoom level ${map.getZoom()}`, 'success');
-                });
-            } catch (error) {
-                updateStatus('Failed to load airports.json', 'error');
+                if (typeof L.maplibreGL !== 'undefined') {
+                    const tomtomLayer = L.maplibreGL({
+                        style: 'https://api.tomtom.com/style/2/custom/style/dG9tdG9tQEBAQ3NzVldyNW9vRE8xNGM4UjtYzY1cmw1O_KElrrp1-a36.json?key=8c6bwORxaSZca2MW4UclcA8gGYt8lbmE',
+                        attribution: '© TomTom | © OpenStreetMap contributors'
+                    });
+                    map.removeLayer(currentBaseLayer);
+                    currentBaseLayer = tomtomLayer.addTo(map);
+                    console.log('TomTom layer added');
+                } else {
+                    console.warn('MapLibre GL not loaded, using fallback layer');
+                }
+            } catch (e) {
+                console.error('Error loading TomTom layer:', e);
+                updateStatus('Failed to load TomTom layer, using fallback', 'warning');
             }
-            updateStatus('Map loaded successfully - Ready for flight tracking', 'success');
-        }
 
-        function addAirportMarkers(airports) {
-            airportMarkers.clearLayers();
-            const zoom = map.getZoom();
-            const filteredAirports = airports.filter(a => {
-                if (zoom < 5) return a.size === 1;
-                if (zoom <= 8) return a.size <= 2;
-                return true;
-            });
-
-            filteredAirports.forEach(a => {
-                const marker = L.marker([a.lat, a.lng], {
-                    icon: L.icon({
-                        iconUrl: 'image/airport.svg',
-                        iconSize: [70, 70],
-                        iconAnchor: [35, 35],
-                        popupAnchor: [0, -35]
-                    })
-                }).bindPopup(`${a.code}`);
-                airportMarkers.addLayer(marker);
-            });
-
-            airportMarkers.addTo(map);
-        }
-
-        function updateAircraftPosition() {
-            const lat = parseFloat(document.getElementById('latitude').value);
-            const lng = parseFloat(document.getElementById('longitude').value);
-            const alt = parseFloat(document.getElementById('altitude').value) || 0;
-            const hdg = parseFloat(document.getElementById('heading').value) || 0;
-            if (isNaN(lat) || isNaN(lng)) {
-                updateStatus('Please enter valid latitude and longitude', 'error');
+            // Load airport data
+            if (typeof Papa === 'undefined') {
+                console.error('PapaParse not loaded');
+                updateStatus('Failed to load PapaParse library', 'error');
+                loadFallbackAirports();
                 return;
             }
-            if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
-                updateStatus('Coordinates out of range (lat: ±90, lng: ±180)', 'error');
-                return;
-            }
-            aircraftData.latitude = lat;
-            aircraftData.longitude = lng;
-            aircraftData.altitude = alt;
-            aircraftData.heading = hdg;
 
-            if (aircraftMarker) map.removeLayer(aircraftMarker);
-            const aircraftIcon = L.divIcon({
-                html: `<div style="font-size: 32px; transform: rotate(${hdg - 90}deg); color: #3b82f6;">✈</div>`,
-                className: 'aircraft-marker',
-                iconSize: [40, 40],
-                iconAnchor: [20, 20]
+            console.log('Loading local airports.csv');
+            const csvUrl = 'airports.csv';
+            Papa.parse(csvUrl, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                step: function(row, parser) {
+                    const data = row.data;
+                    if (!data.type || !['large_airport', 'medium_airport'].includes(data.type)) {
+                        return;
+                    }
+                    if (!data.iata_code || data.iata_code === '') {
+                        return;
+                    }
+                    const lat = parseFloat(data.latitude_deg ? data.latitude_deg.trim().replace(/^"|"$/g, '') : NaN);
+                    const lng = parseFloat(data.longitude_deg ? data.longitude_deg.trim().replace(/^"|"$/g, '') : NaN);
+                    const ident = data.ident ? data.ident.trim().replace(/^"|"$/g, '') : '';
+                    const name = data.name ? data.name.trim().replace(/^"|"$/g, '') : '';
+                    if (isNaN(lat) || isNaN(lng) || !ident || !name || lat === null || lng === null || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+                        console.warn(`Skipping invalid airport: ${ident || 'unknown'} (lat: ${lat}, lng: ${lng}, name: ${name})`);
+                        return;
+                    }
+
+                    const airport = {
+                        code: ident,
+                        name: name,
+                        lat: lat,
+                        lng: lng,
+                        iata: data.iata_code.trim().replace(/^"|"$/g, ''),
+                        elevation: data.elevation_ft ? `${data.elevation_ft.trim().replace(/^"|"$/g, '')} ft` : 'N/A',
+                        country: data.iso_country ? data.iso_country.trim().replace(/^"|"$/g, '') : 'Unknown',
+                        type: data.type
+                    };
+                    allAirports.push(airport);
+                },
+                complete: function() {
+                    console.log(`Processed ${allAirports.length} valid airports`);
+                    if (allAirports.length === 0) {
+                        console.error('No valid airports after processing');
+                        updateStatus('No valid airport data found in CSV', 'error');
+                        loadFallbackAirports();
+                        return;
+                    }
+
+                    addAirportMarkers(allAirports);
+                    updateAirportMarkers();
+                    map.on('zoomend', debounce(() => {
+                        clusterGroups.large.options.removeOutsideVisibleBounds = true;
+                        clusterGroups.medium.options.removeOutsideVisibleBounds = true;
+                        updateAirportMarkers();
+                    }, 100));
+                    map.on('move', debounce(updateAirportMarkers, 100));
+                    map.invalidateSize();
+                    updateStatus(`Map loaded with ${allAirports.length} airports`, 'success');
+                    updateLoadingProgress(3);
+                    // Force progress to next step after timeout
+                    setTimeout(() => {
+                        if (loadingProgress < 4) {
+                            console.log('Forcing loading progress to step 4');
+                            updateLoadingProgress(4);
+                        }
+                    }, 3000);
+                },
+                error: function(err) {
+                    console.error('CSV parse error:', err);
+                    updateStatus(`Failed to load airport data: ${err.message}`, 'error');
+                    setTimeout(() => {
+                        loadFallbackAirports();
+                    }, 1000);
+                }
             });
-            aircraftMarker = L.marker([lat, lng], { icon: aircraftIcon }).addTo(map);
-            if (lockMapToAircraft) {
-                map.setView([lat, lng], map.getZoom());
-            }
-            updateStatus(`Aircraft position updated to lat: ${lat.toFixed(4)}, lng: ${lng.toFixed(4)}, alt: ${alt}ft`, 'success');
-            showAircraftInfo();
+        } catch (e) {
+            console.error('Map initialization error:', e);
+            updateStatus(`Map initialization failed: ${e.message}`, 'error');
+            setTimeout(() => {
+                loadFallbackAirports();
+            }, 1000);
+        }
+    }
+
+    function loadFallbackAirports() {
+        console.log('Loading fallback airports');
+        allAirports = fallbackAirports;
+        addAirportMarkers(allAirports);
+        updateAirportMarkers();
+        map.on('zoomend', debounce(() => {
+            clusterGroups.large.options.removeOutsideVisibleBounds = true;
+            clusterGroups.medium.options.removeOutsideVisibleBounds = true;
+            updateAirportMarkers();
+        }, 100));
+        map.on('move', debounce(updateAirportMarkers, 100));
+        map.invalidateSize();
+        updateStatus(`Loaded ${allAirports.length} fallback airports`, 'warning');
+        updateLoadingProgress(3);
+        // Force progress to next step
+        setTimeout(() => updateLoadingProgress(4), 1000);
+    }
+
+    function addAirportMarkers(airports) {
+    console.log('Adding airport markers:', airports.length);
+    clusterGroups.large.clearLayers();
+    clusterGroups.medium.clearLayers();
+    airportMarkers.large = [];
+    airportMarkers.medium = [];
+
+    const maxMarkers = 10000;
+    let count = { large: 0, medium: 0 };
+    let invalidCount = 0;
+
+    airports.forEach((airport) => {
+        const isLarge = airport.type === 'large_airport';
+        const targetCluster = isLarge ? 'large' : 'medium';
+        if (count[targetCluster] >= maxMarkers) {
+            console.warn(`Max markers reached for ${targetCluster}`);
+            return;
         }
 
-        function showAircraftInfo() {
-            const info = document.getElementById('aircraftInfo');
-            info.style.display = 'block';
-            document.getElementById('position').textContent = `${(aircraftData.latitude != null ? aircraftData.latitude.toFixed(4) : '0.0000')}, ${(aircraftData.longitude != null ? aircraftData.longitude.toFixed(4) : '0.0000')}`;
-            document.getElementById('alt').textContent = `${aircraftData.altitude != null ? aircraftData.altitude : 0} ft`;
-            document.getElementById('hdg').textContent = `${aircraftData.heading != null ? aircraftData.heading : 0}°`;
-            document.getElementById('callsign').textContent = aircraftData.callsign || '-';
-            document.getElementById('aircraft').textContent = aircraftData.aircraft || '-';
-            document.getElementById('gs').textContent = `${aircraftData.groundSpeed != null ? Math.round(aircraftData.groundSpeed) : 0} kts`;
-            document.getElementById('origin').textContent = aircraftData.origin || '-';
-            document.getElementById('destination').textContent = aircraftData.destination || '-';
+        if (isNaN(airport.lat) || isNaN(airport.lng) || airport.lat === null || airport.lng === null || Math.abs(airport.lat) > 90 || Math.abs(airport.lng) > 180) {
+            console.warn(`Invalid coordinates for airport ${airport.code}: lat=${airport.lat}, lng=${airport.lng}`);
+            invalidCount++;
+            return;
         }
 
-        function changeMapLayer() {
-            const selectedLayer = document.getElementById('mapLayer').value;
-            if (currentBaseLayer) map.removeLayer(currentBaseLayer);
-            if (currentOverlayLayer) map.removeLayer(currentOverlayLayer);
-            currentOverlayLayer = null;
+        const popupContent = `
+            <div style="font-family: 'Inter', sans-serif; min-width: 180px;">
+                <div style="font-weight: bold; color: #1e40af; margin-bottom: 5px; font-size: 16px;">
+                    ${airport.code}
+                </div>
+                <div style="color: #64748b; margin-bottom: 8px; font-size: 13px;">
+                    ${airport.name}
+                </div>
+                <div style="color: #475569; font-size: 12px; margin-bottom: 4px;">
+                    <strong>IATA:</strong> ${airport.iata}
+                </div>
+                <div style="color: #475569; font-size: 12px; margin-bottom: 4px;">
+                    <strong>ICAO:</strong> ${airport.code}
+                </div>
+                <div style="color: #475569; font-size: 12px; margin-bottom: 4px;">
+                    <strong>Elevation:</strong> ${airport.elevation}
+                </div>
+                <div style="color: #475569; font-size: 12px; margin-bottom: 4px;">
+                    <strong>Country:</strong> ${airport.country}
+                </div>
+                <div style="color: #475569; font-size: 12px;">
+                    <strong>Position:</strong> ${airport.lat.toFixed(4)}, ${airport.lng.toFixed(4)}
+                </div>
+            </div>
+        `;
 
-            let baseUrl, baseAttribution, maxZoom = 19, options = {};
-            switch (selectedLayer) {
-                case 'satellite':
-                    baseUrl = 'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
-                    baseAttribution = '© Google';
-                    options.subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
-                    break;
-                case 'terrain':
-                    baseUrl = 'https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}{r}.png';
-                    baseAttribution = 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
-                    options.subdomains = 'abcd';
-                    maxZoom = 18;
-                    break;
-                case 'topo':
-                    baseUrl = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
-                    baseAttribution = '© OpenTopoMap contributors';
-                    maxZoom = 17;
-                    break;
-                case 'dark':
-                    baseUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-                    baseAttribution = '© CARTO';
-                    break;
-                case 'hybrid':
-                    baseUrl = 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
-                    baseAttribution = '© Google';
-                    options.subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
-                    break;
-                case 'darkHybrid':
-                    baseUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
-                    baseAttribution = '© CARTO | © Google';
-                    currentBaseLayer = L.tileLayer(baseUrl, { attribution: baseAttribution, maxZoom }).addTo(map);
-                    currentOverlayLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}', {
-                        attribution: '',
-                        subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
-                        pane: 'labels',
-                        maxZoom: 20
-                    }).addTo(map);
-                    addAirportMarkers(airports);
-                    updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
+        const marker = L.marker([airport.lat, airport.lng], {
+            icon: isLarge ? largeAirportIcon : mediumAirportIcon,
+            zIndexOffset: isLarge ? 1000 : 500
+        }).bindPopup(popupContent);
+
+        airportMarkers[targetCluster].push(marker);
+        clusterGroups[targetCluster].addLayer(marker);
+        count[targetCluster]++;
+    });
+
+    console.log(`Added ${count.large} large airport markers`);
+    console.log(`Added ${count.medium} medium airport markers`);
+    console.log(`Skipped ${invalidCount} airports with invalid coordinates`);
+}
+
+    function updateAirportMarkers() {
+        const zoom = map.getZoom();
+        const bounds = map.getBounds();
+        const maxMarkers = 10000;
+        let count = { large: 0, medium: 0 };
+
+        ['large', 'medium'].forEach(type => {
+            airportMarkers[type].forEach((marker) => {
+                if (count[type] >= maxMarkers) {
                     return;
-                case 'tomtom':
+                }
+                const latLng = marker.getLatLng();
+                const isInBounds = bounds.contains(latLng);
+                if (isInBounds) {
+                    if (!clusterGroups[type].hasLayer(marker)) {
+                        clusterGroups[type].addLayer(marker);
+                        count[type]++;
+                    }
+                } else if (clusterGroups[type].options.removeOutsideVisibleBounds) {
+                    if (clusterGroups[type].hasLayer(marker)) {
+                        clusterGroups[type].removeLayer(marker);
+                    }
+                }
+            });
+        });
+
+        console.log(`Rendered ${count.large} large and ${count.medium} medium markers at zoom ${zoom}, bounds: ${JSON.stringify(bounds)}`);
+        updateStatus(`Updated ${count.large} large and ${count.medium} medium airport markers`, 'success');
+    }
+
+    function updateAircraftPosition() {
+    const lat = parseFloat(document.getElementById('latitude').value);
+    const lng = parseFloat(document.getElementById('longitude').value);
+    const alt = parseFloat(document.getElementById('altitude').value) || 0;
+    const hdg = parseFloat(document.getElementById('heading')?.value) || 0; // Heading in degrees (0 = north)
+    console.log('Updating aircraft position:', { lat, lng, alt, hdg });
+
+    if (isNaN(lat) || isNaN(lng)) {
+        console.error('Invalid lat/lng:', { lat, lng });
+        updateStatus('Please enter valid latitude and longitude', 'error');
+        return;
+    }
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        console.error('Coordinates out of range:', { lat, lng });
+        updateStatus('Coordinates out of range (lat: ±90, lng: ±180)', 'error');
+        return;
+    }
+
+    aircraftData.latitude = lat;
+    aircraftData.longitude = lng;
+    aircraftData.altitude = alt;
+    aircraftData.heading = hdg;
+
+    // Create a custom pane for the aircraft marker if it doesn't exist
+    if (!map.getPane('aircraftPane')) {
+        map.createPane('aircraftPane');
+        map.getPane('aircraftPane').style.zIndex = 650; // Above markerPane (400) and overlayPane (500)
+    }
+
+    if (aircraftMarker) map.removeLayer(aircraftMarker);
+    const aircraftIcon = L.divIcon({
+        html: `
+            <svg viewBox="0 0 182.97 184.01" width="24" height="24" transform="rotate(${hdg - 90})">
+                <path fill="#3b82f6" stroke="#2b6cb0" stroke-miterlimit="10" stroke-width="8" d="M171.69,80.18L23.27,5.49C11.17-.6-1.17,13.24,6.24,24.56l39.43,60.19c2.89,4.41,2.89,10.1,0,14.51L6.24,159.44c-7.42,11.32,4.93,25.16,17.02,19.08l148.42-74.69c9.71-4.89,9.71-18.76,0-23.65Z"/>
+            </svg>
+        `,
+        className: 'aircraft-marker',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+    });
+    aircraftMarker = L.marker([lat, lng], {
+        icon: aircraftIcon,
+        pane: 'aircraftPane' // Use custom pane for top layer
+    }).addTo(map);
+
+    if (lockMapToAircraft) {
+        map.setView([lat, lng], map.getZoom());
+    }
+    updateStatus(`Aircraft position updated to lat: ${lat.toFixed(4)}, lng: ${lng.toFixed(4)}, alt: ${alt}ft`, 'success');
+    showAircraftInfo();
+}
+    function showAircraftInfo() {
+        console.log('Showing aircraft info:', aircraftData);
+        const info = document.getElementById('aircraftInfo');
+        info.style.display = 'block';
+        document.getElementById('position').textContent = `${(aircraftData.latitude != null ? aircraftData.latitude.toFixed(4) : '0.0000')}, ${(aircraftData.longitude != null ? aircraftData.longitude.toFixed(4) : '0.0000')}`;
+        document.getElementById('alt').textContent = `${aircraftData.altitude != null ? aircraftData.altitude : 0} ft`;
+        document.getElementById('hdg').textContent = `${aircraftData.heading != null ? aircraftData.heading : 0}°`;
+        document.getElementById('callsign').textContent = aircraftData.callsign || '-';
+        document.getElementById('aircraft').textContent = aircraftData.aircraft || '-';
+        document.getElementById('gs').textContent = `${aircraftData.groundSpeed != null ? Math.round(aircraftData.groundSpeed) : 0} kts`;
+        document.getElementById('origin').textContent = aircraftData.origin || '-';
+        document.getElementById('destination').textContent = aircraftData.destination || '-';
+    }
+
+    function changeMapLayer() {
+        const selectedLayer = document.getElementById('mapLayer').value;
+        console.log('Changing map layer to:', selectedLayer);
+        if (currentBaseLayer) map.removeLayer(currentBaseLayer);
+        if (currentOverlayLayer) map.removeLayer(currentOverlayLayer);
+        currentOverlayLayer = null;
+
+        let baseUrl, baseAttribution, maxZoom = 19, options = {};
+        switch (selectedLayer) {
+            case 'satellite':
+                baseUrl = 'https://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}';
+                baseAttribution = '© Google';
+                options.subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
+                break;
+            case 'terrain':
+                baseUrl = 'https://stamen-tiles-{s}.a.ssl.fastly.net/terrain/{z}/{x}/{y}{r}.png';
+                baseAttribution = 'Map tiles by <a href="http://stamen.com">Stamen Design</a>, <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> &mdash; Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+                options.subdomains = 'abcd';
+                maxZoom = 18;
+                break;
+            case 'topo':
+                baseUrl = 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png';
+                baseAttribution = '© OpenTopoMap contributors';
+                maxZoom = 17;
+                break;
+            case 'dark':
+                baseUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                baseAttribution = '© CARTO';
+                break;
+            case 'hybrid':
+                baseUrl = 'https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}';
+                baseAttribution = '© Google';
+                options.subdomains = ['mt0', 'mt1', 'mt2', 'mt3'];
+                break;
+            case 'darkHybrid':
+                baseUrl = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+                baseAttribution = '© CARTO | © Google';
+                currentBaseLayer = L.tileLayer(baseUrl, { attribution: baseAttribution, maxZoom }).addTo(map);
+                currentOverlayLayer = L.tileLayer('https://{s}.google.com/vt/lyrs=h&x={x}&y={y}&z={z}', {
+                    attribution: '',
+                    subdomains: ['mt0', 'mt1', 'mt2', 'mt3'],
+                    pane: 'labels',
+                    maxZoom: 20
+                }).addTo(map);
+                updateAirportMarkers();
+                updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
+                return;
+            case 'tomtom':
+                try {
                     currentBaseLayer = L.maplibreGL({
                         style: 'https://api.tomtom.com/style/2/custom/style/dG9tdG9tQEBAQ3NzVldyNW9vRE8xNGM4UjtYzY1cmw1O_KElrrp1-a36.json?key=8c6bwORxaSZca2MW4UclcA8gGYt8lbmE',
                         attribution: '© TomTom | © OpenStreetMap contributors'
                     }).addTo(map);
-                    addAirportMarkers(airports);
-                    updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
-                    return;
-                default:
-                    baseUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-                    baseAttribution = '© OpenStreetMap contributors';
-            }
-            currentBaseLayer = L.tileLayer(baseUrl, { attribution: baseAttribution, maxZoom, ...options }).addTo(map);
-            addAirportMarkers(airports);
-            updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
-        }
-
-        function importSimBrief() {
-            alert('SimBrief integration coming soon');
-        }
-
-        function handleDragOver(event) {
-            event.preventDefault();
-            event.currentTarget.classList.add('dragover');
-        }
-
-        function handleDragLeave(event) {
-            event.preventDefault();
-            event.currentTarget.classList.remove('dragover');
-        }
-
-        function handleFileDrop(event) {
-            event.preventDefault();
-            event.currentTarget.classList.remove('dragover');
-            const file = event.dataTransfer.files[0];
-            if (file) {
-                handleFileImport(file);
-            }
-        }
-
-        function handleFileImport(input) {
-            let file;
-            if (input instanceof File) {
-                file = input;
-            } else {
-                file = document.getElementById('simbriefFile').files[0];
-            }
-            if (!file) {
-                updateStatus('No file selected', 'error');
+                } catch (e) {
+                    console.error('Error loading TomTom layer:', e);
+                    currentBaseLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors',
+                        maxZoom: 19,
+                        tileSize: 256,
+                        zoomOffset: 0,
+                        updateWhenIdle: true,
+                        keepBuffer: 6,
+                        edgeBufferTiles: 2,
+                        tileCache: true
+                    }).addTo(map);
+                    updateStatus('Failed to load TomTom layer, using fallback', 'warning');
+                }
+                updateAirportMarkers();
+                updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
                 return;
-            }
-            updateStatus(`Imported flight plan file: ${file.name}`, 'success');
+            default:
+                baseUrl = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+                baseAttribution = '© OpenStreetMap contributors';
         }
+        currentBaseLayer = L.tileLayer(baseUrl, { attribution: baseAttribution, maxZoom, ...options }).addTo(map);
+        updateAirportMarkers();
+        updateStatus(`Map layer changed to ${selectedLayer}`, 'success');
+    }
 
-        function centerOnAircraft() {
-            if (aircraftData.latitude && aircraftData.longitude) {
-                map.setView([aircraftData.latitude, aircraftData.longitude]);
-                updateStatus('Centered on aircraft position', 'success');
-            } else {
-                updateStatus('Aircraft position not set', 'warning');
-            }
+    function importSimBrief() {
+        const simbriefId = document.getElementById('simbriefId').value;
+        if (simbriefId) {
+            alert('API integration not available without key. Please generate the plan on SimBrief.com using ID ' + simbriefId + ', download the XML file, and upload it here.');
+        } else {
+            alert('Enter a SimBrief Flight ID, generate on SimBrief.com, download XML, and upload here.');
         }
+    }
 
-        function clearFlightPlan() {
-            if (flightPlanRoute) map.removeLayer(flightPlanRoute);
+    function handleDragOver(event) {
+        event.preventDefault();
+        event.currentTarget.classList.add('dragover');
+        console.log('File drag over');
+    }
+
+    function handleDragLeave(event) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('dragover');
+        console.log('File drag leave');
+    }
+
+    function handleFileDrop(event) {
+        event.preventDefault();
+        event.currentTarget.classList.remove('dragover');
+        const file = event.dataTransfer.files[0];
+        console.log('File dropped:', file ? file.name : 'No file');
+        if (file) {
+            handleFileImport(file);
+        }
+    }
+    function toggleWaypointMarkers(type) {
+    const toggleElement = document.getElementById(`${type}-toggle`);
+    if (!toggleElement || !window.waypointMarkers || !window.waypointMarkers[type]) {
+        console.warn(`Toggle failed: No element or layer found for type '${type}'`);
+        return;
+    }
+
+    const isActive = toggleElement.classList.contains('active');
+    toggleElement.classList.toggle('active', !isActive);
+    if (isActive) {
+        map.removeLayer(window.waypointMarkers[type]);
+    } else {
+        window.waypointMarkers[type].addTo(map);
+    }
+}
+
+    function handleFileImport(input) {
+        let file;
+        if (input instanceof File) {
+            file = input;
+        } else {
+            file = document.getElementById('simbriefFile').files[0];
+        }
+        console.log('Handling file import:', file ? file.name : 'No file');
+        if (!file) {
+            updateStatus('No file selected', 'error');
+            return;
+        }
+        updateStatus(`Imported flight plan file: ${file.name}`, 'success');
+    }
+
+    function centerOnAircraft() {
+        console.log('Centering on aircraft:', aircraftData);
+        if (aircraftData.latitude && aircraftData.longitude) {
+            map.setView([aircraftData.latitude, aircraftData.longitude]);
+            updateStatus('Centered on aircraft position', 'success');
+        } else {
+            updateStatus('Aircraft position not set', 'warning');
+        }
+    }
+
+    function clearFlightPlan() {
+        console.log('Clearing flight plan');
+        if (flightPlanRoute) {
+            map.removeLayer(flightPlanRoute);
             flightPlanRoute = null;
-            currentFlightPlan = null;
-            updateStatus('Flight plan cleared', 'success');
+        }
+        // Remove waypoint markers
+        if (window.flightPlanWaypoints) {
+            window.flightPlanWaypoints.forEach(marker => {
+                map.removeLayer(marker);
+            });
+            window.flightPlanWaypoints.clear();
+        }
+        currentFlightPlan = null;
+        aircraftData.origin = '';
+        aircraftData.destination = '';
+        showAircraftInfo();
+        updateStatus('Flight plan cleared', 'success');
+    }
+
+    async function fetchAircraftData() {
+        if (!isSimConnectConnected) return;
+        
+        console.log('Fetching aircraft data');
+        try {
+            const positionResponse = await fetch('/aircraft/position');
+            const positionData = await positionResponse.json();
+            if (positionData.error) {
+                console.error('Position Error:', positionData.error);
+            } else {
+                console.log('Position:', positionData);
+                if (autoUpdateEnabled) {
+                    handleRealtimePositionUpdate(positionData);
+                    updateLoadingProgress(4);
+                }
+            }
+
+            const typeResponse = await fetch('/aircraft/type');
+            const typeData = await typeResponse.json();
+            if (typeData.error) {
+                console.error('Type Error:', typeData.error);
+            } else {
+                console.log('Aircraft Type:', typeData.type);
+                aircraftData.aircraft = typeData.type;
+            }
+        } catch (error) {
+            console.error('Fetch Error:', error);
+            setTimeout(() => updateLoadingProgress(4), 3000);
+        }
+    }
+
+    // Handle file import (updated to support XML)
+function handleFileImport(event) {
+    let file;
+    if (event instanceof File) {
+        file = event;
+    } else {
+        file = document.getElementById('simbriefFile').files[0];
+    }
+    console.log('Handling file import:', file ? file.name : 'No file');
+    if (!file) {
+        updateStatus('No file selected', 'error');
+        return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const content = e.target.result;
+        if (file.name.endsWith('.xml')) {
+            parseSimBriefXML(content);
+        } else if (file.name.endsWith('.json')) {
+            // TODO: Handle JSON (if SimBrief JSON export) - similar to XML but use JSON.parse
+            updateStatus('JSON parsing not implemented yet', 'warning');
+        } else if (file.name.endsWith('.fms')) {
+            // TODO: Handle .fms format if needed
+            updateStatus('FMS parsing not implemented yet', 'warning');
+        } else {
+            updateStatus('Unsupported file format', 'error');
+        }
+    };
+    reader.readAsText(file);
+    updateStatus(`Imported flight plan file: ${file.name}`, 'success');
+}
+
+function toggleAirportMarkers(type) {
+    const toggle = document.getElementById(`${type}-airport-toggle`);
+    const isActive = !toggle.classList.contains('active'); // Determine new state after toggle
+    toggle.classList.toggle('active');
+    console.log(`Toggling ${type} airport markers: ${isActive ? 'showing' : 'hiding'}`);
+    
+    if (!map) {
+        console.error(`Map object is undefined`);
+        updateStatus(`Error: Map not initialized`, 'error');
+        return;
+    }
+
+    if (!clusterGroups[type]) {
+        console.error(`Cluster group for ${type} not found`);
+        updateStatus(`Error: ${type.charAt(0).toUpperCase() + type.slice(1)} airport markers not found`, 'error');
+        return;
+    }
+
+    if (isActive) {
+        console.log(`Attempting to show ${type} airport markers`);
+        if (!map.hasLayer(clusterGroups[type])) {
+            clusterGroups[type].addTo(map);
+            console.log(`${type} cluster group added to map`);
+            // Refresh clusters to ensure rendering
+            clusterGroups[type].refreshClusters();
+            // Force map to update marker rendering
+            updateAirportMarkers();
+            map.invalidateSize();
+            console.log(`Map invalidated and markers updated for ${type}`);
+            updateStatus(`${type.charAt(0).toUpperCase() + type.slice(1)} airport markers shown`, 'success');
+        } else {
+            console.log(`${type} cluster group already on map`);
+            updateStatus(`${type.charAt(0).toUpperCase() + type.slice(1)} airport markers already visible`, 'warning');
+        }
+    } else {
+        console.log(`Attempting to hide ${type} airport markers`);
+        if (map.hasLayer(clusterGroups[type])) {
+            map.removeLayer(clusterGroups[type]);
+            console.log(`${type} cluster group removed from map`);
+            updateStatus(`${type.charAt(0).toUpperCase() + type.slice(1)} airport markers hidden`, 'warning');
+        } else {
+            console.log(`${type} cluster group already removed`);
+            updateStatus(`${type.charAt(0).toUpperCase() + type.slice(1)} airport markers already hidden`, 'warning');
+        }
+    }
+}
+
+// Parse SimBrief XML and plot the flight plan
+// Parse SimBrief XML and plot the flight plan
+function parseSimBriefXML(xmlString) {
+    try {
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+
+        if (xmlDoc.getElementsByTagName("parsererror").length > 0) {
+            throw new Error('Invalid XML format');
         }
 
-        // Enhanced legacy compatibility
-        async function fetchAircraftData() {
-            if (!isSimConnectConnected) return;
-            
-            try {
-                const positionResponse = await fetch('/aircraft/position');
-                const positionData = await positionResponse.json();
-                if (positionData.error) {
-                    console.error('Position Error:', positionData.error);
-                } else {
-                    console.log('Position:', positionData);
-                    if (autoUpdateEnabled) {
-                        handleRealtimePositionUpdate(positionData);
+        const originElement = xmlDoc.getElementsByTagName('origin')[0];
+        const destinationElement = xmlDoc.getElementsByTagName('destination')[0];
+
+        const originICAO = originElement?.getElementsByTagName('icao_code')[0]?.textContent || 'UNKNOWN';
+        const originName = originElement?.getElementsByTagName('name')[0]?.textContent || originICAO;
+        const destinationICAO = destinationElement?.getElementsByTagName('icao_code')[0]?.textContent || 'UNKNOWN';
+        const destinationName = destinationElement?.getElementsByTagName('name')[0]?.textContent || destinationICAO;
+
+        const originAirport = allAirports.find(a => a.code === originICAO || a.iata === originICAO) || {
+            code: originICAO,
+            name: originName,
+            lat: parseFloat(originElement?.getElementsByTagName('pos_lat')[0]?.textContent) || 0,
+            lng: parseFloat(originElement?.getElementsByTagName('pos_long')[0]?.textContent) || 0
+        };
+        const destinationAirport = allAirports.find(a => a.code === destinationICAO || a.iata === destinationICAO) || {
+            code: destinationICAO,
+            name: destinationName,
+            lat: parseFloat(destinationElement?.getElementsByTagName('pos_lat')[0]?.textContent) || 0,
+            lng: parseFloat(destinationElement?.getElementsByTagName('pos_long')[0]?.textContent) || 0
+        };
+
+        aircraftData.origin = `${originAirport.name} (${originICAO})`;
+        aircraftData.destination = `${destinationAirport.name} (${destinationICAO})`;
+        const originCoords = [originAirport.lat, originAirport.lng];
+        const destinationCoords = [destinationAirport.lat, destinationAirport.lng];
+
+        let waypoints = [];
+        let waypointData = [];
+
+        const navlog = xmlDoc.getElementsByTagName('navlog')[0];
+        if (navlog) {
+            const navfixes = navlog.getElementsByTagName('fix');
+            for (let i = 0; i < navfixes.length; i++) {
+                const fix = navfixes[i];
+                const lat = parseFloat(fix.getElementsByTagName('pos_lat')[0]?.textContent);
+                const lon = parseFloat(fix.getElementsByTagName('pos_long')[0]?.textContent);
+                if (!isNaN(lat) && !isNaN(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+                    waypoints.push([lat, lon]);
+                    waypointData.push({
+                        ident: fix.getElementsByTagName('ident')[0]?.textContent || `WPT${i + 1}`,
+                        name: fix.getElementsByTagName('name')[0]?.textContent || '',
+                        type: fix.getElementsByTagName('type')[0]?.textContent || 'waypoint',
+                        coords: [lat, lon]
+                    });
+                }
+            }
+        }
+
+        if (waypoints.length === 0) {
+            const route = xmlDoc.getElementsByTagName('route')[0];
+            if (route) {
+                const routefixes = route.getElementsByTagName('fix');
+                for (let i = 0; i < routefixes.length; i++) {
+                    const fix = routefixes[i];
+                    const lat = parseFloat(fix.getElementsByTagName('pos_lat')[0]?.textContent);
+                    const lon = parseFloat(fix.getElementsByTagName('pos_long')[0]?.textContent);
+                    if (!isNaN(lat) && !isNaN(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) {
+                        waypoints.push([lat, lon]);
+                        waypointData.push({
+                            ident: fix.getElementsByTagName('ident')[0]?.textContent || `WPT${i + 1}`,
+                            name: fix.getElementsByTagName('name')[0]?.textContent || '',
+                            type: fix.getElementsByTagName('type')[0]?.textContent || 'waypoint',
+                            coords: [lat, lon]
+                        });
                     }
                 }
-
-                const typeResponse = await fetch('/aircraft/type');
-                const typeData = await typeResponse.json();
-                if (typeData.error) {
-                    console.error('Type Error:', typeData.error);
-                } else {
-                    console.log('Aircraft Type:', typeData.type);
-                    aircraftData.aircraft = typeData.type;
-                }
-            } catch (error) {
-                console.error('Fetch Error:', error);
             }
         }
 
-        // Initialize everything
-        async function initialize() {
-            await initMap();
-            initWebSocket();
-            
-            // Legacy support - keep the existing polling as fallback
-            setInterval(fetchAircraftData, 2000);
-            
-            updateStatus('FlyCharts with SimConnect integration ready', 'success');
+        if (waypoints.length === 0) {
+            const allFixes = xmlDoc.getElementsByTagName('fix');
+            const waypointMap = new Map();
+            for (let i = 0; i < allFixes.length; i++) {
+                const fix = allFixes[i];
+                const lat = parseFloat(fix.getElementsByTagName('pos_lat')[0]?.textContent);
+                const lon = parseFloat(fix.getElementsByTagName('pos_long')[0]?.textContent);
+                const ident = fix.getElementsByTagName('ident')[0]?.textContent;
+                if (!isNaN(lat) && !isNaN(lon) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180 && ident) {
+                    const key = `${lat.toFixed(6)}_${lon.toFixed(6)}`;
+                    if (!waypointMap.has(key)) {
+                        waypointMap.set(key, {
+                            lat,
+                            lon,
+                            ident,
+                            type: fix.getElementsByTagName('type')[0]?.textContent || 'waypoint',
+                            name: fix.getElementsByTagName('name')[0]?.textContent || '',
+                            index: i
+                        });
+                    }
+                }
+            }
+            const sortedWaypoints = Array.from(waypointMap.values()).sort((a, b) => a.index - b.index);
+            waypoints = sortedWaypoints.map(wp => [wp.lat, wp.lon]);
+            waypointData = sortedWaypoints.map(wp => ({
+                ident: wp.ident,
+                name: wp.name,
+                type: wp.type,
+                coords: [wp.lat, wp.lon]
+            }));
         }
 
-        // Start the application
-        initialize();
-    </script>
+        waypoints.unshift(originCoords);
+        waypointData.unshift({
+            ident: originICAO,
+            name: originAirport.name,
+            type: 'airport',
+            coords: originCoords
+        });
+
+        if (!destinationCoords.every(coord => isNaN(coord))) {
+            waypoints.push(destinationCoords);
+            waypointData.push({
+                ident: destinationICAO,
+                name: destinationAirport.name,
+                type: 'airport',
+                coords: destinationCoords
+            });
+        }
+
+        if (waypoints.length < 2) {
+            updateStatus('Insufficient waypoints in XML', 'error');
+            return;
+        }
+
+        clearFlightPlan();
+
+        if (!window.waypointMarkers) {
+            window.waypointMarkers = {
+                waypoint: L.layerGroup(),
+                vor: L.layerGroup(),
+                ndb: L.layerGroup(),
+                toc: L.layerGroup()
+            };
+            Object.values(window.waypointMarkers).forEach(layer => layer.addTo(map));
+        } else {
+            Object.values(window.waypointMarkers).forEach(layer => layer.clearLayers());
+        }
+
+        const totalWaypoints = waypoints.length;
+        const departureEnd = Math.min(Math.ceil(totalWaypoints * 0.15), 3);
+        const arrivalStart = Math.max(Math.floor(totalWaypoints * 0.85), totalWaypoints - 3);
+
+        const flightPhases = [
+            { name: 'departure', color: '#90EE90', start: 0, end: departureEnd, weight: 5 },
+            { name: 'enroute', color: '#00BFFF', start: departureEnd, end: arrivalStart, weight: 4 },
+            { name: 'arrival', color: '#DA70D6', start: arrivalStart, end: totalWaypoints - 1, weight: 5 }
+        ];
+
+        flightPlanRoute = L.layerGroup();
+        flightPhases.forEach(phase => {
+            if (phase.start < phase.end && phase.end <= waypoints.length) {
+                const segmentWaypoints = waypoints.slice(phase.start, phase.end + 1);
+                if (segmentWaypoints.length >= 2) {
+                    const outline = L.polyline(segmentWaypoints, {
+                        color: phase.color === '#90EE90' ? '#4ADE80' : 
+                               phase.color === '#00BFFF' ? '#0284C7' :
+                               phase.color === '#DA70D6' ? '#A855F7' : '#F87171',
+                        weight: phase.weight + 2,
+                        opacity: 0.8,
+                        smoothFactor: 1.0,
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    });
+                    const polyline = L.polyline(segmentWaypoints, {
+                        color: phase.color,
+                        weight: phase.weight + 1,
+                        opacity: 0.7,
+                        smoothFactor: 1.0,
+                        lineCap: 'round',
+                        lineJoin: 'round'
+                    });
+                    flightPlanRoute.addLayer(outline);
+                    flightPlanRoute.addLayer(polyline);
+                }
+            }
+        });
+
+        if (totalWaypoints > 4) {
+            const approachStart = Math.max(arrivalStart, totalWaypoints - 2);
+            const approachWaypoints = waypoints.slice(approachStart);
+            if (approachWaypoints.length >= 2) {
+                const approachOutline = L.polyline(approachWaypoints, {
+                    color: '#F87171',
+                    weight: 8,
+                    opacity: 0.8,
+                    smoothFactor: 1.0,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                });
+                const approachLine = L.polyline(approachWaypoints, {
+                    color: '#FFB6C1',
+                    weight: 7,
+                    opacity: 0.7,
+                    smoothFactor: 1.0,
+                    lineCap: 'round',
+                    lineJoin: 'round'
+                });
+                flightPlanRoute.addLayer(approachOutline);
+                flightPlanRoute.addLayer(approachLine);
+            }
+        }
+
+        flightPlanRoute.addTo(map);
+
+        function getWaypointIcon(type, ident, isOrigin, isDestination) {
+            let symbol, size, color;
+            if (isOrigin || isDestination) {
+                symbol = '●';
+                size = 18;
+                color = isOrigin ? '#22C55E' : '#EF4444';
+            } else {
+                switch (type.toLowerCase()) {
+                    case 'vor':
+                    case 'vordme':
+                    case 'vortac':
+                        symbol = '◊';
+                        size = 16;
+                        color = '#8B5CF6';
+                        break;
+                    case 'ndb':
+                        symbol = '○';
+                        size = 14;
+                        color = '#F59E0B';
+                        break;
+                    case 'waypoint':
+                    case 'wpt':
+                    case 'intersection':
+                        symbol = '△';
+                        size = 14;
+                        color = '#06B6D4';
+                        break;
+                    case 'airport':
+                        symbol = '●';
+                        size = 16;
+                        color = '#10B981';
+                        break;
+                    case 'ltlg':
+                        symbol = '☆';
+                        size = 16;
+                        color = '#FFFF00';
+                        break;
+                    default:
+                        symbol = '△';
+                        size = 12;
+                        color = '#6B7280';
+                }
+            }
+            return L.divIcon({
+                html: `
+                    <div style="position: relative; text-align: center;">
+                        <div style="font-size: ${size}px; color: ${color}; text-shadow: 2px 2px 4px rgba(0,0,0,0.8), -2px -2px 4px rgba(0,0,0,0.8), 2px -2px 4px rgba(0,0,0,0.8), -2px 2px 4px rgba(0,0,0,0.8); filter: drop-shadow(0 0 3px rgba(0,0,0,0.6)); line-height: 1; margin-bottom: 2px;">${symbol}</div>
+                        <div style="font-size: 10px; font-weight: bold; color: #FFFFFF; text-shadow: 1px 1px 2px rgba(0,0,0,0.9), -1px -1px 2px rgba(0,0,0,0.9), 1px -1px 2px rgba(0,0,0,0.9), -1px 1px 2px rgba(0,0,0,0.9); font-family: 'Inter', sans-serif; background: rgba(0,0,0,0.7); padding: 1px 3px; border-radius: 3px; white-space: nowrap;">${ident}</div>
+                    </div>
+                `,
+                className: 'waypoint-marker',
+                iconSize: [Math.max(ident.length * 7, size * 2), size + 15],
+                iconAnchor: [Math.max(ident.length * 3.5, size), size + 7]
+            });
+        }
+
+        waypointData.forEach((wpData, index) => {
+            const isOrigin = index === 0;
+            const isDestination = index === waypointData.length - 1;
+            const displayName = wpData.name || wpData.ident;
+
+            const waypointIcon = getWaypointIcon(wpData.type, wpData.ident, isOrigin, isDestination);
+
+            const marker = L.marker(wpData.coords, {
+                icon: waypointIcon,
+                zIndexOffset: isOrigin || isDestination ? 1000 : wpData.type.toLowerCase() === 'ltlg' ? 800 : 500
+            });
+
+            const popupContent = `
+                <div style="font-family: 'Inter', sans-serif; min-width: 180px;">
+                    <div style="font-weight: bold; color: #1e40af; margin-bottom: 5px; font-size: 16px;">${wpData.ident}</div>
+                    ${displayName ? `<div style="color: #64748b; margin-bottom: 8px; font-size: 13px;">${displayName}</div>` : ''}
+                    <div style="color: #475569; font-size: 12px; margin-bottom: 4px;"><strong>Position:</strong> ${wpData.coords[0].toFixed(4)}, ${wpData.coords[1].toFixed(4)}</div>
+                    <div style="color: #475569; font-size: 12px; margin-bottom: 4px;"><strong>Type:</strong> ${wpData.type}</div>
+                    <div style="color: #475569; font-size: 12px; margin-bottom: 4px;"><strong>Sequence:</strong> ${index + 1} of ${waypointData.length}</div>
+                    ${isOrigin ? '<div style="color: #16a34a; font-weight: bold; font-size: 12px; margin-top: 6px; padding: 4px 8px; background: rgba(22, 163, 74, 0.1); border-radius: 4px;">DEPARTURE</div>' : ''}
+                    ${isDestination ? '<div style="color: #dc2626; font-weight: bold; font-size: 12px; margin-top: 6px; padding: 4px 8px; background: rgba(220, 38, 38, 0.1); border-radius: 4px;">DESTINATION</div>' : ''}
+                </div>
+            `;
+
+            marker.bindPopup(popupContent);
+
+            const typeKey = wpData.type.toLowerCase().includes('vor') ? 'vor' :
+                           wpData.type.toLowerCase().includes('ndb') ? 'ndb' :
+                           wpData.type.toLowerCase().includes('airport') ? null :
+                           wpData.type.toLowerCase() === 'ltlg' ? 'toc' : 'waypoint';
+            if (typeKey) {
+                window.waypointMarkers[typeKey].addLayer(marker);
+            } else {
+                marker.addTo(map);
+            }
+
+            if (!window.flightPlanWaypoints) window.flightPlanWaypoints = new Set();
+            window.flightPlanWaypoints.add(marker);
+        });
+
+        const bounds = L.latLngBounds(waypoints);
+        map.fitBounds(bounds, { padding: [50, 50] });
+
+        if (!isSimConnectConnected) {
+            document.getElementById('latitude').value = originAirport.lat;
+            document.getElementById('longitude').value = originAirport.lng;
+            updateAircraftPosition();
+        }
+
+        currentFlightPlan = { 
+            waypoints, 
+            origin: aircraftData.origin, 
+            destination: aircraftData.destination 
+        };
+
+        showAircraftInfo();
+        updateStatus(`Flight plan loaded: ${aircraftData.origin} → ${aircraftData.destination} (${waypoints.length} waypoints)`, 'success');
+    } catch (error) {
+        console.error('XML parse error:', error);
+        updateStatus(`Failed to parse XML: ${error.message}`, 'error');
+    }
+}
+
+    async function initialize() {
+        console.log('Starting FlyCharts initialization at', new Date().toISOString());
+        updateLoadingProgress(0);
+        try {
+            if (!document.getElementById('map')) {
+                console.error('Map container not found');
+                updateStatus('Map container not found', 'error');
+                updateLoadingProgress(0);
+                return;
+            }
+            await initMap();
+            initWebSocket();
+            setInterval(fetchAircraftData, 2000);
+            updateStatus('FlyCharts with SimConnect integration ready', 'success');
+        } catch (e) {
+            console.error('Initialization error:', e);
+            updateStatus(`Initialization failed: ${e.message}`, 'error');
+            updateLoadingProgress(0);
+        }
+    }
+
+    // Start initialization
+    console.log('Script loaded, starting initialization');
+    initialize();
+</script>
+cript>
+(${waypoints.length} waypoints)`, 'success');
+    } catch (error) {
+        console.error('XML parse error:', error);
+        updateStatus(`Failed to parse XML: ${error.message}`, 'error');
+    }
+}
+
+    async function initialize() {
+        console.log('Starting FlyCharts initialization at', new Date().toISOString());
+        updateLoadingProgress(0);
+        try {
+            if (!document.getElementById('map')) {
+                console.error('Map container not found');
+                updateStatus('Map container not found', 'error');
+                updateLoadingProgress(0);
+                return;
+            }
+            await initMap();
+            initWebSocket();
+            setInterval(fetchAircraftData, 2000);
+            updateStatus('FlyCharts with SimConnect integration ready', 'success');
+        } catch (e) {
+            console.error('Initialization error:', e);
+            updateStatus(`Initialization failed: ${e.message}`, 'error');
+            updateLoadingProgress(0);
+        }
+    }
+
+    // Start initialization
+    console.log('Script loaded, starting initialization');
+    initialize();
+</script>
 </body>
 </html>

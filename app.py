@@ -126,6 +126,12 @@ class SimConnectManager:
             "timestamp": datetime.now().isoformat()
         }
     
+    def get_aircraft_title(self):
+        title = self.aq.get("TITLE")
+        if isinstance(title, bytes):
+            return title.decode(errors="ignore")
+        return title or ""
+    
     def get_aircraft_position(self):
         """Get current aircraft position and details"""
         if not self.connected or not self.aq:
@@ -142,7 +148,7 @@ class SimConnectManager:
             vertical_speed = self.aq.get("VERTICAL_SPEED")
             
             # Get aircraft details
-            aircraft_title = self.aq.get("TITLE")
+            aircraft_title = self.get_aircraft_title()
             atc_id = self.aq.get("ATC_ID")
             
             if latitude is not None and longitude is not None:

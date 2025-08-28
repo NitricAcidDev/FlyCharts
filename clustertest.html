@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Major Airports Map</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        #map { height: 100vh; }
+        body { margin: 0; padding: 0; }
+        .custom-cluster-large {
+            background: radial-gradient(circle, rgba(255, 0, 0, 0.8), rgba(255, 0, 0, 0.4));
+            border-radius: 50%;
+        }
+        .custom-cluster-large div {
+            background: rgba(200, 0, 0, 0.9);
+            color: white;
+            font-weight: bold;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 40px;
+        }
+        .custom-cluster-medium {
+            background: radial-gradient(circle, rgba(0, 255, 0, 0.8), rgba(0, 255, 0, 0.4));
+            border-radius: 50%;
+        }
+        .custom-cluster-medium div {
+            background: rgba(0, 200, 0, 0.9);
+            color: white;
+            font-weight: bold;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 40px;
+        }
+        .leaflet-popup-content-wrapper {
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            padding: 10px;
+            font-family: 'Arial', sans-serif;
+        }
+        .leaflet-popup-content {
+            margin: 10px;
+            line-height: 1.5;
+        }
+        .leaflet-popup-content b {
+            font-size: 14px;
+            color: #333;
+        }
+        .leaflet-popup-content p {
+            margin: 5px 0;
+            font-size: 12px;
+            color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        let map;
+        let airportMarkers = { large: [], medium: [] };
+        let clusterGroups = { large: null, medium: null };
+
+        // Define icons
+        const defaultIcon = L.icon({
+            iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34]
+        });
+        const largeAirportIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+            iconSize: [36, 36],
+            iconAnchor: [18, 36],
+            popupAnchor: [0, -36]
+        });
+        const mediumAirportIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+            iconSize: [28, 28],
+            iconAnchor: [14, 28],
+            popupAnchor: [0, -28]
+        });
+
+        // Custom cluster icon
+        function createClusterIcon(cluster, type) {
+            const count = cluster.getAllChildMarkers().length;
+            return L.divIcon({
+                html: `<div><span>${count}</span></div>`,
+                className: `custom-cluster-${type}`,
+                iconSize: [40, 40]
+            });
+        }
+
+        // Debounce function
+        function debounce(func, delay) {
+            let timeout;
+            return function() {
+                const context = this;
+                const args = arguments;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+
+        async function initMap() {
+            // Initialize map (world center for global view)
+            map = L.map('map', { zoomControl: true, attributionControl: true }).setView([0, 0], 2);
+
+            // Set high z-index for marker pane
+            map.getPane('markerPane').style.zIndex = 650;
+
+            // Add CartoDB Positron tile layer for sleeker look
+            L.tileLayer('https://cartodb-basemaps-{s}.global.ssl.fastly.net/light_all/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                maxZoom: 19,
+                zIndex: 0
+            }).addTo(map);
+
+            // Initialize cluster groups
+            clusterGroups.large = L.markerClusterGroup({
+                maxClusterRadius: function(zoom) {
+                    if (zoom < 6) {
+                        return Math.max(260 - Math.floor(zoom / 2) * 8, 30);
+                    } else {
+                        return Math.max(244 - (zoom - 5) * 4, 30);
+                    }
+                },
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: true,
+                zoomToBoundsOnClick: true,
+                disableClusteringAtZoom: 14,
+                iconCreateFunction: cluster => createClusterIcon(cluster, 'large'),
+                chunkedLoading: true,
+                removeOutsideVisibleBounds: true
+            }).addTo(map);
+            clusterGroups.medium = L.markerClusterGroup({
+                maxClusterRadius: function(zoom) {
+                    if (zoom < 6) {
+                        return Math.max(260 - Math.floor(zoom / 2) * 8, 30);
+                    } else {
+                        return Math.max(244 - (zoom - 5) * 4, 30);
+                    }
+                },
+                spiderfyOnMaxZoom: true,
+                showCoverageOnHover: true,
+                zoomToBoundsOnClick: true,
+                disableClusteringAtZoom: 14,
+                iconCreateFunction: cluster => createClusterIcon(cluster, 'medium'),
+                chunkedLoading: true,
+                removeOutsideVisibleBounds: true
+            }).addTo(map);
+
+            // Load and parse OurAirports CSV
+            const csvUrl = 'airports.csv';
+            Papa.parse(csvUrl, {
+                download: true,
+                header: true,
+                skipEmptyLines: true,
+                transform: (value) => value.trim().replace(/^"|"$/g, ''),
+                complete: function(results) {
+                    if (!results.data || results.data.length === 0) {
+                        console.error('No data found in CSV');
+                        alert('Failed to load airport data: Empty or invalid CSV. Please check the CSV file or host it locally.');
+                        return;
+                    }
+
+                    const maxMediumAirports = 100000; // Total medium airport cap
+                    const targetMediumPerCountry = 100; // Target 50 medium airports per country
+                    let airports = [];
+                    let countryCounts = {};
+                    let availableMediumCounts = {};
+                    let largeAirportCount = 0;
+                    let mediumAirportCount = 0;
+
+                    // First pass: Include all large_airport
+                    results.data.forEach(row => {
+                        if (row.type !== 'large_airport' || !row.iata_code || row.iata_code === '') return;
+                        const lat = parseFloat(row.latitude_deg);
+                        const lng = parseFloat(row.longitude_deg);
+                        const ident = row.ident;
+                        const name = row.name;
+                        if (isNaN(lat) || isNaN(lng) || !ident || !name) {
+                            console.warn('Skipping invalid row:', row);
+                            return;
+                        }
+
+                        const country = row.iso_country || 'Unknown';
+                        countryCounts[country] = (countryCounts[country] || 0) + 1;
+
+                        airports.push({
+                            code: ident,
+                            name: name,
+                            lat: lat,
+                            lng: lng,
+                            iata: row.iata_code,
+                            elevation: row.elevation_ft ? `${row.elevation_ft} ft` : 'N/A',
+                            country: country,
+                            type: row.type
+                        });
+                        largeAirportCount++;
+                    });
+
+                    // Collect all valid medium airports by country and count them
+                    let mediumAirportsByCountry = {};
+                    results.data.forEach(row => {
+                        if (row.type !== 'medium_airport' || !row.iata_code || row.iata_code === '') return;
+                        const lat = parseFloat(row.latitude_deg);
+                        const lng = parseFloat(row.longitude_deg);
+                        const ident = row.ident;
+                        const name = row.name;
+                        if (isNaN(lat) || isNaN(lng) || !ident || !name) {
+                            console.warn('Skipping invalid row:', row);
+                            return;
+                        }
+
+                        const country = row.iso_country || 'Unknown';
+                        if (!mediumAirportsByCountry[country]) {
+                            mediumAirportsByCountry[country] = [];
+                            availableMediumCounts[country] = 0;
+                        }
+                        mediumAirportsByCountry[country].push({
+                            code: ident,
+                            name: name,
+                            lat: lat,
+                            lng: lng,
+                            iata: row.iata_code,
+                            elevation: row.elevation_ft ? `${row.elevation_ft} ft` : 'N/A',
+                            country: country,
+                            type: row.type
+                        });
+                        availableMediumCounts[country]++;
+                    });
+
+                    // Log available medium airports by country
+                    console.log('Available medium airports by country:', availableMediumCounts);
+
+                    // Sort countries by available medium airports (ascending) to prioritize smaller countries
+                    const sortedCountries = Object.keys(mediumAirportsByCountry).sort((a, b) => {
+                        return availableMediumCounts[a] - availableMediumCounts[b];
+                    });
+
+                    // Second pass: Select medium airports targeting 50 per country
+                    sortedCountries.forEach(country => {
+                        if (mediumAirportCount >= maxMediumAirports) return;
+                        const mediumAirports = mediumAirportsByCountry[country];
+                        // Sort by longitude within country for better spread
+                        mediumAirports.sort((a, b) => a.lng - b.lng);
+                        const availableCount = mediumAirports.length;
+                        let targetCount = Math.min(targetMediumPerCountry, availableCount);
+                        if (availableCount === 0) return;
+
+                        const step = availableCount / targetCount || 1;
+                        for (let i = 0; i < availableCount && mediumAirportCount < maxMediumAirports && (countryCounts[country] || 0) < targetMediumPerCountry; i += Math.max(Math.floor(step), 1)) {
+                            const airport = mediumAirports[i];
+                            if (airport) {
+                                if (airport.code.toUpperCase().match(/^(EGKK|EGGW|EGLL)$/)) {
+                                    console.log(`Found major UK airport: ${airport.name} (${airport.code})`);
+                                }
+                                airports.push(airport);
+                                countryCounts[country] = (countryCounts[country] || 0) + 1;
+                                mediumAirportCount++;
+                            }
+                        }
+                    });
+
+                    if (airports.length === 0) {
+                        console.error('No valid airports after filtering');
+                        alert('No valid airport data found in CSV. Please verify the dataset.');
+                        return;
+                    }
+
+                    console.log(`Loaded ${airports.length} valid airports (${largeAirportCount} large, ${mediumAirportCount} medium)`);
+                    console.log('Country counts:', countryCounts);
+                    addAirportMarkers(airports);
+                    updateAirportMarkers();
+                    map.on('zoomend', updateAirportMarkers);
+                    map.on('move', debounce(updateAirportMarkers, 100));
+                    map.invalidateSize();
+                },
+                error: function(err) {
+                    console.error('Error loading CSV:', err);
+                    alert(`Failed to load airport data: ${err.message}. Try hosting the CSV locally as 'airports.csv' or checking the network connection.`);
+                    console.log('Attempting to load local airports.csv');
+                    Papa.parse('airports.csv', {
+                        download: false,
+                        header: true,
+                        skipEmptyLines: true,
+                        transform: (value) => value.trim().replace(/^"|"$/g, ''),
+                        complete: function(localResults) {
+                            const maxMediumAirports = 100000;
+                            const targetMediumPerCountry = 100;
+                            let airports = [];
+                            let countryCounts = {};
+                            let availableMediumCounts = {};
+                            let largeAirportCount = 0;
+                            let mediumAirportCount = 0;
+
+                            // First pass: Include all large_airport
+                            localResults.data.forEach(row => {
+                                if (row.type !== 'large_airport' || !row.iata_code || row.iata_code === '') return;
+                                const lat = parseFloat(row.latitude_deg);
+                                const lng = parseFloat(row.longitude_deg);
+                                const ident = row.ident;
+                                const name = row.name;
+                                if (isNaN(lat) || isNaN(lng) || !ident || !name) {
+                                    console.warn('Skipping invalid row:', row);
+                                    return;
+                                }
+
+                                const country = row.iso_country || 'Unknown';
+                                countryCounts[country] = (countryCounts[country] || 0) + 1;
+
+                                airports.push({
+                                    code: ident,
+                                    name: name,
+                                    lat: lat,
+                                    lng: lng,
+                                    iata: row.iata_code,
+                                    elevation: row.elevation_ft ? `${row.elevation_ft} ft` : 'N/A',
+                                    country: country,
+                                    type: row.type
+                                });
+                                largeAirportCount++;
+                            });
+
+                            // Collect all valid medium airports by country and count them
+                            let mediumAirportsByCountry = {};
+                            localResults.data.forEach(row => {
+                                if (row.type !== 'medium_airport' || !row.iata_code || row.iata_code === '') return;
+                                const lat = parseFloat(row.latitude_deg);
+                                const lng = parseFloat(row.longitude_deg);
+                                const ident = row.ident;
+                                const name = row.name;
+                                if (isNaN(lat) || isNaN(lng) || !ident || !name) {
+                                    console.warn('Skipping invalid row:', row);
+                                    return;
+                                }
+
+                                const country = row.iso_country || 'Unknown';
+                                if (!mediumAirportsByCountry[country]) {
+                                    mediumAirportsByCountry[country] = [];
+                                    availableMediumCounts[country] = 0;
+                                }
+                                mediumAirportsByCountry[country].push({
+                                    code: ident,
+                                    name: name,
+                                    lat: lat,
+                                    lng: lng,
+                                    iata: row.iata_code,
+                                    elevation: row.elevation_ft ? `${row.elevation_ft} ft` : 'N/A',
+                                    country: country,
+                                    type: row.type
+                                });
+                                availableMediumCounts[country]++;
+                            });
+
+                            // Log available medium airports by country
+                            console.log('Available medium airports by country (local CSV):', availableMediumCounts);
+
+                            // Sort countries by available medium airports (ascending) to prioritize smaller countries
+                            const sortedCountries = Object.keys(mediumAirportsByCountry).sort((a, b) => {
+                                return availableMediumCounts[a] - availableMediumCounts[b];
+                            });
+
+                            // Second pass: Select medium airports targeting 50 per country
+                            sortedCountries.forEach(country => {
+                                if (mediumAirportCount >= maxMediumAirports) return;
+                                const mediumAirports = mediumAirportsByCountry[country];
+                                mediumAirports.sort((a, b) => a.lng - b.lng);
+                                const availableCount = mediumAirports.length;
+                                let targetCount = Math.min(targetMediumPerCountry, availableCount);
+                                if (availableCount === 0) return;
+
+                                const step = availableCount / targetCount || 1;
+                                for (let i = 0; i < availableCount && mediumAirportCount < maxMediumAirports && (countryCounts[country] || 0) < targetMediumPerCountry; i += Math.max(Math.floor(step), 1)) {
+                                    const airport = mediumAirports[i];
+                                    if (airport) {
+                                        if (airport.code.toUpperCase().match(/^(EGKK|EGGW|EGLL)$/)) {
+                                            console.log(`Found major UK airport: ${airport.name} (${airport.code})`);
+                                        }
+                                        airports.push(airport);
+                                        countryCounts[country] = (countryCounts[country] || 0) + 1;
+                                        mediumAirportCount++;
+                                    }
+                                }
+                            });
+
+                            if (airports.length === 0) {
+                                console.error('No valid airports in local CSV');
+                                alert('No valid airport data in local CSV. Please verify the file.');
+                                return;
+                            }
+
+                            console.log(`Loaded ${airports.length} valid airports (${largeAirportCount} large, ${mediumAirportCount} medium) from local CSV`);
+                            console.log('Country counts (local CSV):', countryCounts);
+                            addAirportMarkers(airports);
+                            updateAirportMarkers();
+                            map.on('zoomend', updateAirportMarkers);
+                            map.on('move', debounce(updateAirportMarkers, 100));
+                            map.invalidateSize();
+                        },
+                        error: function(localErr) {
+                            console.error('Error loading local CSV:', localErr);
+                            alert('Failed to load local CSV: Please ensure airports.csv is in the same directory as index.html.');
+                        }
+                    });
+                }
+            });
+        }
+
+        function addAirportMarkers(airports) {
+            clusterGroups.large.clearLayers();
+            clusterGroups.medium.clearLayers();
+            airportMarkers.large = [];
+            airportMarkers.medium = [];
+
+            const maxMarkers = 10000; // Increased limit to handle more markers
+            let count = { large: 0, medium: 0 };
+
+            airports.forEach(airport => {
+                const isLarge = airport.type === 'large_airport';
+                const targetCluster = isLarge ? 'large' : 'medium';
+                if (count[targetCluster] >= maxMarkers) return;
+
+                const popupContent = `<b>${airport.name} (${airport.code})</b><br>` +
+                                     `<p>IATA: ${airport.iata}</p>` +
+                                     `<p>ICAO: ${airport.code}</p>` +
+                                     `<p>Elevation: ${airport.elevation}</p>` +
+                                     `<p>Country: ${airport.country}</p>`;
+                const marker = L.marker([airport.lat, airport.lng], {
+                    icon: isLarge ? largeAirportIcon : mediumAirportIcon,
+                    zIndexOffset: isLarge ? 1000 : 500
+                }).bindPopup(popupContent);
+
+                airportMarkers[targetCluster].push(marker);
+                clusterGroups[targetCluster].addLayer(marker);
+                count[targetCluster]++;
+            });
+
+            console.log(`Added ${airportMarkers.large.length} large airport markers`);
+            console.log(`Added ${airportMarkers.medium.length} medium airport markers`);
+        }
+
+        function updateAirportMarkers() {
+            const zoom = map.getZoom();
+            const bounds = map.getBounds();
+            const maxMarkers = 10000; // Increased limit to handle more markers
+            let count = { large: 0, medium: 0 };
+
+            ['large', 'medium'].forEach(type => {
+                airportMarkers[type].forEach(marker => {
+                    if (count[type] >= maxMarkers) return;
+                    const latLng = marker.getLatLng();
+                    const isInBounds = bounds.contains(latLng);
+                    if (isInBounds) {
+                        if (!clusterGroups[type].hasLayer(marker)) {
+                            clusterGroups[type].addLayer(marker);
+                            count[type]++;
+                        }
+                    } else {
+                        if (clusterGroups[type].hasLayer(marker)) {
+                            clusterGroups[type].removeLayer(marker);
+                        }
+                    }
+                });
+            });
+
+            console.log(`Rendered ${count.large} large and ${count.medium} medium markers at zoom ${zoom}`);
+        }
+
+        // Initialize map on load
+        initMap();
+    </script>
+</body>
+</html>
