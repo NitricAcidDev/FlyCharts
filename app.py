@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-FlyCharts - Enhanced Flask Application with SimConnect Integration
+FlyCharts - Enhanced Flask Application with SimConnect and SimBrief Integration
 """
 
-from flask import Flask, jsonify, send_file, send_from_directory, Response
+from flask import Flask, jsonify, send_file, send_from_directory, Response, request
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 import logging
@@ -11,6 +11,8 @@ import os
 import time
 import threading
 from datetime import datetime
+import requests
+import xml.etree.ElementTree as ET
 
 # SimConnect imports with error handling
 try:
@@ -33,9 +35,16 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('flycharts.log'),
+        logging.StreamHandler()
+    ]
 )
 logger = logging.getLogger(__name__)
+
+# SimBrief API configuration
+SIMBRIEF_API_URL = "https://www.simbrief.com/api/xml.fetcher.php"
 
 class SimConnectManager:
     def __init__(self):
@@ -265,6 +274,61 @@ def get_aircraft_position_api():
         return jsonify({"success": True, "data": position})
     else:
         return jsonify({"success": False, "message": "No position data available"})
+
+@app.route('/api/simbrief/fetch', methods=['POST'])
+def fetch_simbrief_plan():
+    """Fetch the latest SimBrief flight plan for a given Pilot ID"""
+    try:
+        data = request.get_json()
+        pilot_id = data.get('pilotId')
+        
+        if not pilot_id:
+            logger.error("Pilot ID is required")
+            return jsonify({
+                "success": False,
+                "message": "Pilot ID is required"
+            }), 400
+            
+        logger.info(f"Fetching SimBrief flight plan for Pilot ID: {pilot_id}")
+        
+        # Prepare API request
+        params = {
+            "userid": pilot_id,
+            "type": "OFP",
+            "output": "XML"
+        }
+        
+        response = requests.get(SIMBRIEF_API_URL, params=params, timeout=10)
+        
+        if response.status_code != 200:
+            logger.error(f"SimBrief API request failed with status {response.status_code}: {response.text[:500]}")
+            return jsonify({
+                "success": False,
+                "message": f"SimBrief API request failed with status {response.status_code}"
+            }), response.status_code
+            
+        # Verify XML content
+        try:
+            xml_content = response.text
+            ET.fromstring(xml_content)  # Validate XML
+            logger.info(f"Successfully fetched SimBrief flight plan for Pilot ID: {pilot_id}")
+            return jsonify({
+                "success": True,
+                "xml": xml_content
+            })
+        except ET.ParseError as e:
+            logger.error(f"Invalid XML response from SimBrief: {e}")
+            return jsonify({
+                "success": False,
+                "message": "Invalid XML response from SimBrief"
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"Error fetching SimBrief flight plan: {e}")
+        return jsonify({
+            "success": False,
+            "message": f"Error fetching flight plan: {str(e)}"
+        }), 500
 
 # WebSocket events
 @socketio.on('connect')
